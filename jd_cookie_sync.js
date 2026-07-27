@@ -16,6 +16,8 @@ const CONFIG_KEYS = {
 };
 
 const DEFAULT_UPDATE_INTERVAL = 1800; // 默认30分钟
+const REQUEST_TIMEOUT = 6000;       // 单次请求超时，必须显著小于 sgmodule 的 timeout=20
+const SYNC_LOCK_TTL = 30000;        // 同步锁自动过期时间，需大于脚本最长存活时间
 
 // ============= 配置管理 =============
 
@@ -101,7 +103,8 @@ function extractCookie(headers) {
 function getCacheKeys(ptPin) {
     return {
         cookie: `jd_cookie_cache_${ptPin}`,
-        lastUpdate: `jd_cookie_last_update_${ptPin}`
+        lastUpdate: `jd_cookie_last_update_${ptPin}`,
+        lock: `jd_cookie_syncing_${ptPin}`
     };
 }
 
@@ -142,6 +145,32 @@ function updateCache(ptPin, cookie) {
     $.setval(String(Date.now()), keys.lastUpdate);
 }
 
+/**
+ * 抢占同步锁，防止京东 App 启动时多个请求并发写入同一账号
+ *
+ * 持久化存储没有原子的 compare-and-swap，这里只能把竞态窗口从
+ * 「整个网络往返（数秒）」压缩到「一次读 + 一次写（微秒级）」。
+ * 锁自带 TTL，脚本被 Surge 强杀时不会永久卡死。
+ */
+function acquireSyncLock(ptPin) {
+    const key = getCacheKeys(ptPin).lock;
+    const heldAt = parseInt($.getval(key) || '0');
+
+    if (heldAt && Date.now() - heldAt < SYNC_LOCK_TTL) {
+        return false;
+    }
+
+    $.setval(String(Date.now()), key);
+    return true;
+}
+
+/**
+ * 释放同步锁
+ */
+function releaseSyncLock(ptPin) {
+    $.setval('0', getCacheKeys(ptPin).lock);
+}
+
 // ============= HTTP 请求封装 =============
 
 /**
@@ -150,7 +179,7 @@ function updateCache(ptPin, cookie) {
 function httpRequest(options) {
     const opts = typeof options === 'string' ? { url: options } : options;
     const method = (opts.method || ('body' in opts ? 'post' : 'get')).toLowerCase();
-    const timeout = opts._timeout || 15000;
+    const timeout = opts._timeout || REQUEST_TIMEOUT;
 
     if (method !== 'get') {
         opts.method = method.toUpperCase();
@@ -216,7 +245,10 @@ async function callQinglongApi(config, token, endpoint, options = {}) {
  * 获取青龙 Token
  */
 async function getQinglongToken(config) {
-    const endpoint = `/open/auth/token?client_id=${config.clientId}&client_secret=${config.clientSecret}`;
+    // 凭证可能包含 & 或 = 等字符，必须编码后再拼进 query string
+    const clientId = encodeURIComponent(config.clientId);
+    const clientSecret = encodeURIComponent(config.clientSecret);
+    const endpoint = `/open/auth/token?client_id=${clientId}&client_secret=${clientSecret}`;
 
     try {
         const body = await callQinglongApi(config, null, endpoint);
@@ -381,10 +413,24 @@ async function handleExistingEnvs(config, token, existingEnvs, cookie, ptPin) {
         return { success: true, noChange: true };
     }
 
-    // 没有值匹配，删除所有旧的并添加新的
+    // 没有值匹配：先新增再删除旧的
+    // 顺序不可颠倒——先删后加时，脚本若在两步之间被终止会导致 JD_COOKIE 彻底丢失
     $.log(`🔄 Cookie 已变化，更新中 [${ptPin}]`);
+    const addResult = await addEnv(config, token, 'JD_COOKIE', cookie, `Account: ${ptPin}`);
+
+    if (!addResult.success) {
+        $.log(`⚠️ 新增失败，保留旧环境变量等待重试 [${ptPin}]`);
+        return addResult;
+    }
+
+    // isDuplicate 表示新值已被别处占用，本次并未真正写入 JD_COOKIE，删除旧的会导致该账号无变量可用
+    if (addResult.isDuplicate) {
+        $.log(`⚠️ 新值已存在于其他环境变量，跳过清理 [${ptPin}]`);
+        return addResult;
+    }
+
     await deleteAllEnvs(config, token, existingEnvs);
-    return await addEnv(config, token, 'JD_COOKIE', cookie, `Account: ${ptPin}`);
+    return addResult;
 }
 
 /**
@@ -415,45 +461,55 @@ async function syncToQinglong(cookie, ptPin) {
         return;
     }
 
-    // 获取 Token
-    const tokenResult = await getQinglongToken(config);
-    if (!tokenResult.success) {
-        $.msg('JD Cookie Sync', '获取 Token 失败', tokenResult.message);
+    // 抢占同步锁，避免并发触发时互相覆盖/删除对方刚写入的变量
+    if (!acquireSyncLock(ptPin)) {
+        $.log(`⏭️ 同步进行中，跳过 [${ptPin}]`);
         return;
     }
 
-    // 查询现有环境变量
-    const envListResult = await getEnvList(config, tokenResult.token);
-    if (!envListResult.success) {
-        $.msg('JD Cookie Sync', '查询环境变量失败', envListResult.message);
-        return;
-    }
-
-    // 处理环境变量同步
-    const existingEnvs = findMatchingEnvs(envListResult.data, ptPin);
-    let result;
-
-    if (existingEnvs.length > 0) {
-        result = await handleExistingEnvs(config, tokenResult.token, existingEnvs, cookie, ptPin);
-    } else {
-        $.log(`➕ 新增账号 [${ptPin}]`);
-        result = await addEnv(config, tokenResult.token, 'JD_COOKIE', cookie, `Account: ${ptPin}`);
-    }
-
-    if (result.success) {
-        updateCache(ptPin, cookie);
-        clearBypassFlag();
-        if (result.noChange) {
-            $.log(`⏭️ 无需更新 [${ptPin}]`);
-        } else if (result.isDuplicate) {
-            $.log(`⏭️ 值已存在 [${ptPin}]`);
-        } else {
-            $.log(`✅ 同步成功 [${ptPin}]`);
-            $.msg('JD Cookie Sync', '✅ 同步成功', `账号: ${ptPin}\n已同步到青龙面板`);
+    try {
+        // 获取 Token
+        const tokenResult = await getQinglongToken(config);
+        if (!tokenResult.success) {
+            $.msg('JD Cookie Sync', '获取 Token 失败', tokenResult.message);
+            return;
         }
-    } else {
-        $.log(`❌ 同步失败 [${ptPin}]: ${result.message}`);
-        $.msg('JD Cookie Sync', '❌ 同步失败', result.message);
+
+        // 查询现有环境变量
+        const envListResult = await getEnvList(config, tokenResult.token);
+        if (!envListResult.success) {
+            $.msg('JD Cookie Sync', '查询环境变量失败', envListResult.message);
+            return;
+        }
+
+        // 处理环境变量同步
+        const existingEnvs = findMatchingEnvs(envListResult.data, ptPin);
+        let result;
+
+        if (existingEnvs.length > 0) {
+            result = await handleExistingEnvs(config, tokenResult.token, existingEnvs, cookie, ptPin);
+        } else {
+            $.log(`➕ 新增账号 [${ptPin}]`);
+            result = await addEnv(config, tokenResult.token, 'JD_COOKIE', cookie, `Account: ${ptPin}`);
+        }
+
+        if (result.success) {
+            updateCache(ptPin, cookie);
+            clearBypassFlag();
+            if (result.noChange) {
+                $.log(`⏭️ 无需更新 [${ptPin}]`);
+            } else if (result.isDuplicate) {
+                $.log(`⏭️ 值已存在 [${ptPin}]`);
+            } else {
+                $.log(`✅ 同步成功 [${ptPin}]`);
+                $.msg('JD Cookie Sync', '✅ 同步成功', `账号: ${ptPin}\n已同步到青龙面板`);
+            }
+        } else {
+            $.log(`❌ 同步失败 [${ptPin}]: ${result.message}`);
+            $.msg('JD Cookie Sync', '❌ 同步失败', result.message);
+        }
+    } finally {
+        releaseSyncLock(ptPin);
     }
 }
 
