@@ -1,4 +1,4 @@
-const remoteUrl = "https://raw.githubusercontent.com/W-Webber/jd_surge/refs/heads/feature-qx/config_helper.js";
+const remoteUrl = "https://raw.githubusercontent.com/conversun/jd_surge/main/config_helper.js";
 
 const $argument = "clear";
 
