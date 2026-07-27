@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "name": "jd_surge",
+  "description": "Surge / Quantumult X scripts syncing JD cookies to Qinglong. package.json exists only to pin the test command; the scripts themselves have no dependencies and are deployed by raw GitHub URL.",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

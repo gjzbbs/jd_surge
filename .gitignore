@@ -39,3 +39,7 @@ secrets.txt
 # Plan file (not needed in git)
 *.plan.md
 
+# Agent tooling runtime artifacts
+.omo/
+.codegraph
+
