@@ -10,7 +10,7 @@
 # 因此改为匹配 client.action 路径本身，由脚本内部用 UA + Cookie 过滤。
 #
 # timeout 必须大于脚本内 REQUEST_TIMEOUT × 串行请求数，否则内部超时保护永远不会生效
-jd_cookie_sync = type=http-request,pattern=^https?:\/\/api\.m\.jd\.com\/client\.action,requires-body=0,max-size=0,script-path=https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.js,timeout=20
+jd_cookie_sync = type=http-request,pattern=^https?:\/\/api\.m\.jd\.com\/client\.action,requires-body=0,max-size=0,script-path=https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.js,timeout=20
 
 [MITM]
 hostname = %APPEND% api.m.jd.com

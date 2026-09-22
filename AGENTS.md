@@ -25,7 +25,7 @@ Logs are the only on-device debugging channel. Keep the emoji log convention (�
 ## Deployment is live and unversioned
 
 Consumers install by raw GitHub URL from `main`:
-`https://raw.githubusercontent.com/conversun/jd_surge/main/<file>`
+`https://raw.githubusercontent.com/gjzbbs/jd_surge/main/<file>`
 
 A push to `main` reaches every user on their next module refresh. There is no staging branch and no release tag. Treat `main` as production.
 
@@ -46,7 +46,7 @@ Scripts are standalone: **no imports, no modules, no bundler**. Each file ends w
 
 **`Env` exposes only `$.get()` and `$.post()`.** There is no `$.delete()`/`$.put()`. Non-GET requests go through `post` with the real verb in `opts.method` — see `httpRequest()` in `jd_cookie_sync.js`. (`CLAUDE.md` claims all verbs are natively supported; that is wrong — commit `a35322c` fixed exactly this bug.)
 
-**QX loader stubs `eval()` a remote file.** `Scripts/QuantumultX/*.js` fetch `config_helper.js` from `conversun/jd_surge@main` at runtime — they carry no logic of their own beyond setting `$argument`. They previously pointed at a `W-Webber/jd_surge@feature-qx` fork, so QX panel users never received changes made here; if you see that fork URL reappear, it is a regression.
+**QX loader stubs `eval()` a remote file.** `Scripts/QuantumultX/*.js` fetch `config_helper.js` from `gjzbbs/jd_surge@main` at runtime — they carry no logic of their own beyond setting `$argument`. They previously pointed at a `W-Webber/jd_surge@feature-qx` fork, so QX panel users never received changes made here; if you see that fork URL reappear, it is a regression.
 
 **Trigger regex lives in two files.** `jd_cookie_sync.sgmodule` and `jd_cookie_sync.snippet` each hardcode
 `^https?:\/\/api\.m\.jd\.com\/client\.action`. Change one → change the other.

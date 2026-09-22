@@ -1,4 +1,4 @@
-const remoteUrl = "https://raw.githubusercontent.com/conversun/jd_surge/main/config_helper.js";
+const remoteUrl = "https://raw.githubusercontent.com/gjzbbs/jd_surge/main/config_helper.js";
 
 const $argument = "smart-check";
 

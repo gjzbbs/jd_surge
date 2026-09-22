@@ -204,5 +204,5 @@ panel_name = script-name=script_name, title="Title", content="Content"
 
 This is a public repository hosting Surge modules. Changes should:
 1. Test locally in Surge before committing
-2. Ensure GitHub raw URLs work (`https://raw.githubusercontent.com/conversun/jd_surge/main/{file}`)
+2. Ensure GitHub raw URLs work (`https://raw.githubusercontent.com/gjzbbs/jd_surge/main/{file}`)
 3. Module installations reference raw GitHub URLs, so main branch changes affect all users immediately

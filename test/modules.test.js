@@ -91,16 +91,18 @@ test('config_panel 只接线 smart-check 与 clear-cache', () => {
 });
 
 test('所有远程脚本 URL 都指向本仓库 main 分支', () => {
-    // QX stub 曾指向 W-Webber/jd_surge@feature-qx 这个 fork，
+    // 部署用的 fork：所有远程脚本必须指向 gjzbbs/jd_surge@main。
+    // 历史上这里曾指向 W-Webber/jd_surge@feature-qx 那个 fork，
     // 导致本仓库对 config_helper.js 的修改永远到不了 QX 用户。
-    const files = ['sgmodule', 'snippet', 'panel', 'qxClear', 'qxClearCache', 'qxSmartCheck'];
+    const files = ['sgmodule', 'snippet', 'panel', 'diag', 'qxClear', 'qxClearCache', 'qxSmartCheck'];
+    const OWN_REPO = /gjzbbs\/jd_surge/;
 
     for (const key of files) {
         const src = readSource(key);
         assert.ok(!src.includes('W-Webber'), `${key} 仍指向 fork 仓库，这是回归`);
 
         for (const url of src.match(/https:\/\/raw\.githubusercontent\.com\/\S+/g) || []) {
-            assert.match(url, /conversun\/jd_surge/, `${key} 中存在外部仓库 URL: ${url}`);
+            assert.match(url, OWN_REPO, `${key} 中存在外部仓库 URL: ${url}`);
         }
     }
 });
@@ -119,7 +121,7 @@ for (const [key, expectedArg] of QX_STUBS) {
         // QX 下 $task.fetch 承担全部 HTTP，所以 smart-check 会再发一次
         // token 请求；这里只关心第一次拉的是本仓库的 config_helper
         assert.ok(fetched.length >= 1, '应当拉取远程脚本');
-        assert.match(fetched[0], /conversun\/jd_surge\/main\/config_helper\.js/);
+        assert.match(fetched[0], /gjzbbs\/jd_surge\/main\/config_helper\.js/);
         assert.match(readSource(key), new RegExp(`\\$argument\\s*=\\s*["']${expectedArg}["']`));
     });
 }

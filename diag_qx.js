@@ -41,7 +41,7 @@
     };
 
     // ---------- 1. 远端脚本是否可下载 ----------
-    const SCRIPT_URL = 'https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.js';
+    const SCRIPT_URL = 'https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.js';
     const got = await fetchText(SCRIPT_URL);
     if (!got.ok) {
         line('❌ 远端脚本【下载失败】: ' + got.error);

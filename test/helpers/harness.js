@@ -23,6 +23,7 @@ const FILES = {
     sgmodule: path.join(ROOT, 'jd_cookie_sync.sgmodule'),
     snippet: path.join(ROOT, 'jd_cookie_sync.snippet'),
     panel: path.join(ROOT, 'config_panel.sgmodule'),
+    diag: path.join(ROOT, 'diag_qx.js'),
     qxClear: path.join(ROOT, 'Scripts/QuantumultX/clear.js'),
     qxClearCache: path.join(ROOT, 'Scripts/QuantumultX/clear_cache.js'),
     qxSmartCheck: path.join(ROOT, 'Scripts/QuantumultX/smart_check.js')

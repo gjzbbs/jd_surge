@@ -1,6 +1,6 @@
 ; JD Cookie Sync to Qinglong
 ; 自动抓取京东 Cookie 并同步到青龙面板
-; https://github.com/conversun/jd_surge
+; https://github.com/gjzbbs/jd_surge
 
 hostname = api.m.jd.com
 
@@ -8,4 +8,4 @@ hostname = api.m.jd.com
 ; URL 现在只剩 /client.action?（空 query）。所以不能再靠 functionId 白名单匹配，
 ; 否则规则命中数永远是 0。改成匹配 client.action 路径本身，
 ; 由脚本内部用 User-Agent + Cookie 做二次过滤。
-^https?:\/\/api\.m\.jd\.com\/client\.action url script-request-header https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.js
+^https?:\/\/api\.m\.jd\.com\/client\.action url script-request-header https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.js

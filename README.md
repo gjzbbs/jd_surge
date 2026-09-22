@@ -2,6 +2,14 @@
 
 自动抓取京东 APP 的 Cookie 并同步到青龙面板，实现京东 Cookie 的自动化管理。
 
+> **本仓库说明**
+>
+> 这是 [`conversun/jd_surge`](https://github.com/conversun/jd_surge) 的部署 fork。**全部安装链接都指向本仓库的 `main` 分支**，因此本 `main` 上的内容会直接生效。
+>
+> 本 fork 额外包含了适配京东 2026-09 接口变更的修复（PR [#8](https://github.com/conversun/jd_surge/pull/8)：触发正则不再依赖 URL 里的 `functionId`、UA 放行 `jdapp;` 前缀、新增 `jd_strip_app_open` 开关）。
+>
+> 若该 PR 合入上游，请把本文所有 `gjzbbs/jd_surge` 换回 `conversun/jd_surge`，或直接从上游仓库重新同步分支，以继续接收上游更新。
+
 ## ✨ 功能特性
 
 - 🚀 **自动抓取** - 打开京东 APP 自动抓取最新 Cookie
@@ -25,7 +33,7 @@
 在 Surge 中添加以下模块：
 
 ```
-https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.sgmodule
+https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.sgmodule
 ```
 
 在 Quantumult X 的 `[rewrite_remote]` 中添加以下 snippet：
@@ -33,7 +41,7 @@ https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.sgmodul
 ```
 [rewrite_remote]
 
-https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.snippet, tag=自动同步京东cookie(qinglong), update-interval=86400, enabled=true
+https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.snippet, tag=自动同步京东cookie(qinglong), update-interval=86400, enabled=true
 ```
 
 #### 安装配置面板（可选）
@@ -41,7 +49,7 @@ https://raw.githubusercontent.com/conversun/jd_surge/main/jd_cookie_sync.snippet
 如需在 Surge 面板中查看配置状态，可安装配置面板模块：
 
 ```
-https://raw.githubusercontent.com/conversun/jd_surge/main/config_panel.sgmodule
+https://raw.githubusercontent.com/gjzbbs/jd_surge/main/config_panel.sgmodule
 ```
 
 如需在 Quantumult X 面板中查看配置状态，可在`[task_local]`中添加：
@@ -53,11 +61,11 @@ https://raw.githubusercontent.com/conversun/jd_surge/main/config_panel.sgmodule
 #如需定时执行，可在设置好时间后，将enabled设置为true
 
 #查看配置信息和状态
-0 0 * * * https://raw.githubusercontent.com/conversun/jd_surge/refs/heads/main/Scripts/QuantumultX/smart_check.js, tag=smart-check, enabled=false
+0 0 * * * https://raw.githubusercontent.com/gjzbbs/jd_surge/refs/heads/main/Scripts/QuantumultX/smart_check.js, tag=smart-check, enabled=false
 # 点击后不会立即清理，需重新启动JD自动替换
-0 0 * * * https://raw.githubusercontent.com/conversun/jd_surge/refs/heads/main/Scripts/QuantumultX/clear_cache.js, tag=清理Cookie缓存, enabled=false
+0 0 * * * https://raw.githubusercontent.com/gjzbbs/jd_surge/refs/heads/main/Scripts/QuantumultX/clear_cache.js, tag=清理Cookie缓存, enabled=false
 # [!慎点!] 删除青龙相关配置参数(ql_url、ql_client_id、ql_client_secret、ql_update_interval等)，清理后需重新配置
-0 0 * * * https://raw.githubusercontent.com/conversun/jd_surge/refs/heads/main/Scripts/QuantumultX/clear.js, tag=清理青龙配置参数, enabled=false
+0 0 * * * https://raw.githubusercontent.com/gjzbbs/jd_surge/refs/heads/main/Scripts/QuantumultX/clear.js, tag=清理青龙配置参数, enabled=false
 
 ```
 
