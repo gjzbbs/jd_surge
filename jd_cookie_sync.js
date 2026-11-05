@@ -31,6 +31,10 @@ const IMPORT_PAYLOAD_KEY = 'jd_import_payload';
 const REQUEST_TIMEOUT = 6000;       // 单次请求超时，必须显著小于 sgmodule 的 timeout=20
 const SYNC_LOCK_TTL = 30000;        // 同步锁自动过期时间，需大于脚本最长存活时间
 
+// 字段补不齐的通知节流：每账号每小时最多提醒一次
+const SKIP_NOTIFY_PREFIX = 'jd_cookie_skipmsg_';
+const SKIP_NOTIFY_TTL = 3600 * 1000;
+
 // ============= 配置管理 =============
 
 /**
@@ -173,6 +177,27 @@ function headerValue(headers, name) {
 function describeHeaderNames(headers) {
     if (!headers) return '(无请求头)';
     return Object.keys(headers).map(key => String(key).toLowerCase()).sort().join(', ');
+}
+
+/**
+ * 字段补不齐时每小时只推一次通知。
+ * 跳过是静默的，日志又埋在 QX 里，不给主动提示用户只会看到「没反应」。
+ */
+function notifySkipOnce(ptPin, reason, headerNames) {
+    try {
+        const key = SKIP_NOTIFY_PREFIX + ptPin;
+        const last = Number($.getval(key) || 0);
+        const now = Date.now();
+        if (last && now - last < SKIP_NOTIFY_TTL) return;
+        $.setval(key, String(now));
+        $.msg(
+            'JD Cookie Sync',
+            `设备字段不全，已跳过 ${ptPin}`,
+            `缺: ${reason}\n本次请求头: ${headerNames}\n\n若一直补不齐，可在 module 里用 argument=push:<HAR 或 curl> 手动导入。`
+        );
+    } catch (error) {
+        // 通知失败不影响主流程
+    }
 }
 
 function canonField(name) {
@@ -1137,6 +1162,7 @@ async function runManualImport(payload) {
             // 只打头名不打值：这是判断「抓包环境到底给了什么」的唯一线索，
             // 没有它就只能猜是规则没命中还是字段被丢弃。
             $.log(`🔍 本次请求头字段: ${describeHeaderNames(headers)}`);
+            notifySkipOnce(captured.ptPin, labels || resolved.reason, describeHeaderNames(headers));
             $.done({});
             return;
         }
