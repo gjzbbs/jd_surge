@@ -1,2 +1,0 @@
-﻿SHALEN=49124
-NOTIFY=True

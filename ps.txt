@@ -1,8 +1,0 @@
-﻿git : To https://github.com/gjzbbs/jd_surge.git
-所在位置 行:1 字符: 262
-+ ... g utf8; $env:GIT_TERMINAL_PROMPT="0"; git push fork main 2>&1 | Out-F ...
-+                                           ~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (To https://gith...bs/jd_surge.git:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-   5b52ac1..131b024  main -> main
