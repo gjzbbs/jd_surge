@@ -298,6 +298,10 @@ function parseUserAgent(raw) {
     const buildTag = ua.match(/[;,]build\/(\d{5,8})/i);
     if (buildTag) info.build = info.build || buildTag[1];
 
+    // jdmall;iphone;version/16.1.50;build/171135;os/17.3 这种中间形态
+    const versionTag = ua.match(/[;,]version\/(\d+\.\d+(?:\.\d+){0,2})/i);
+    if (versionTag && !info.clientVersion) info.clientVersion = versionTag[1];
+
     const jdapp = ua.match(/^jdapp;([^;]*);([^;]+)/i);
     if (jdapp) {
         if (!info.platform) info.platform = /android/i.test(jdapp[1]) ? 'android' : 'ios';
@@ -356,8 +360,11 @@ function normalizeProfileFields(fields) {
         dModel: normalizeDeviceValue(source.dModel, 32),
         osVersion: os ? os.text : '',
         platform: (os && os.platform) || uaInfo.platform,
-        build: normalizeBuild(source.build) || uaInfo.build,
-        clientVersion: normalizeClientVersion(source.clientVersion) || uaInfo.clientVersion,
+        // UA 里的 version/ 与 appBuild/ 是 App 自报的权威值。
+        // 有些接口（babelGetGuideTips）会把 clientVersion 写成 1.0.0，
+        // 一旦让它覆盖真值，这个账号的版本号就永久错了。
+        build: uaInfo.build || normalizeBuild(source.build),
+        clientVersion: uaInfo.clientVersion || normalizeClientVersion(source.clientVersion),
         openudid: String(source.openudid || '').trim(),
         screen: String(source.screen || '').trim()
     };
@@ -525,6 +532,35 @@ function platformMatchesBrand(platform, dBrand) {
     return platform === 'ios' ? iosBrand : !iosBrand;
 }
 
+// 安卓机型前缀 → 厂商。京东的 d_brand 要的是厂商名，不是型号。
+// 认不出来就留空（宁可跳过，也不要编一个和机型对不上的品牌）。
+const ANDROID_BRAND_HINTS = [
+    [/^(?:SM-|Galaxy|GT-)/i, 'samsung'],
+    [/^(?:Redmi|Mi |MI |POCO|M20|M21)/i, 'xiaomi'],
+    [/^(?:HUAWEI|ELS-|ALN-|LIO-|NOH-|JAD-|BAL-)/i, 'HUAWEI'],
+    [/^(?:HONOR|ANY-|BVL-|FCP-)/i, 'honor'],
+    [/^(?:OPPO|P[A-Z]{2}\d|CPH\d)/i, 'oppo'],
+    [/^(?:vivo|V\d{4}|PD\d)/i, 'vivo'],
+    [/^(?:OnePlus|LE\d{4}|NE\d{4})/i, 'OnePlus'],
+    [/^(?:Pixel)/i, 'Google'],
+    [/^(?:realme|RMX\d)/i, 'realme']
+];
+
+/**
+ * d_brand 在多数请求里是密文，只有极少数请求（且常常不带 pt_pin）才有明文。
+ * 品牌可以由平台和机型确定推出：iPhone 一定是 apple，安卓按型号前缀认厂商。
+ * 这样 d_brand 不会成为永远补不齐的那个字段。
+ */
+function deriveBrand(platform, dModel) {
+    if (platform === 'ios') return 'apple';
+    if (platform !== 'android') return '';
+    const model = String(dModel || '');
+    for (const [pattern, brand] of ANDROID_BRAND_HINTS) {
+        if (pattern.test(model)) return brand;
+    }
+    return '';
+}
+
 /**
  * UA 归一成 jdapp; 形态：平台 + App 版本 + appBuild 都在串里。
  * 已经是 jdapp; 的原样保留，不改造真实 UA。
@@ -553,12 +589,16 @@ function finalizeProfile(input) {
     const osCheck = checkOsVersion(profile);
     const platform = osCheck.ok ? osCheck.platform : (profile.platform || '');
 
+    profile.platform = platform;
+
+    // d_brand 在 body 里几乎永远是密文；能从平台和机型推出来的话就别让它成为缺口
+    if (!profile.dBrand) profile.dBrand = deriveBrand(platform, profile.dModel);
+
     if (!platformMatchesBrand(platform, profile.dBrand)) {
         profile.dBrand = '';
         profile.dModel = '';
     }
 
-    profile.platform = platform;
     profile.osVersion = osCheck.ok ? osCheck.osVersion : '';
     if (osCheck.ok) profile.clientHello = osCheck.clientHello;
 
@@ -568,6 +608,9 @@ function finalizeProfile(input) {
     // 抓包里的 uuid 十有八九是密文，密文按没有处理；缓存也没有就按 ptPin 派生一个
     // 稳定值——否则这台设备永远是"缺 uuid"，一条都同步不出去
     if (!profile.uuid && profile.ptPin) profile.uuid = deriveUuid(profile.ptPin);
+
+    // openudid 是可选项：抓到就写，抓不到不写。消费方按「没有 openudid 就用 uuid」处理，
+    // 所以这里不拿 uuid 顶替，避免每次同步都多出一段没必要的字段。
 
     const missing = REQUIRED_PROFILE_FIELDS.filter(field => !profile[field]);
     return {

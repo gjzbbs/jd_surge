@@ -144,17 +144,19 @@ pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135
 | `uuid` | body 的 `uuid`（密文 `R4i…` 丢弃） | 32–40 位十六进制；拿不到时按 `pt_pin` 派生一个稳定值 |
 | `x-api-eid-token` | body 的 `x-api-eid-token` | `jdd` 开头，长度 100–400 |
 | `wg-sdk-token` | body 的 `ext` 里的 `sdkToken` | `jdd01` 开头，长度 ≥100 |
-| `d_brand`、`d_model` | body 的 `d_brand`、`d_model` | 只留明码机型，密文丢弃 |
+| `d_brand`、`d_model` | body 的 `d_brand`、`d_model` | 只留明码机型，密文丢弃；`d_brand` 拿不到时按平台和机型推出（iOS 必是 `apple`，安卓按型号前缀认厂商） |
 | `osVersion` | body 的 `osVersion`，或 UA 里的 `os/17.3` | 如 `18.5` |
-| `build` | body 的 `build`，或 UA 里的 `appBuild/` | 5–8 位数字 |
-| `clientVersion` | body 的 `clientVersion`，或 UA 里的版本号 | App 版本 |
+| `build` | UA 里的 `appBuild/`，其次 body 的 `build` | 5–8 位数字 |
+| `clientVersion` | UA 里的版本号，其次 body 的 `clientVersion` | App 版本 |
 
 几点约定：
 
 - **设备字段几乎都在 POST body 的 query string 里，不在请求头**。所以 sgmodule 用 `requires-body=1`，Quantumult X 用 `script-request-body`——只要请求头的话只能拿到 `pt_key`/`pt_pin`。
 - 一次 `client.action` 只带一部分字段（`uuid` 在启动请求、`x-api-eid-token` 在消息中心、`wg-sdk-token` 藏在 `ext` 里），脚本会按字段攒进 `jd_cookie_partial_{ptPin}`，攒齐 10 个才写青龙。`jd_cookie_cache_{ptPin}` 仍然只在同步成功后写。
 - 抓包里的 `uuid`、`d_brand`、`d_model`、`osVersion`、`screen` 经常是 `R4iSK…` 开头的密文。密文一律当成「没抓到」，不写进 JD_COOKIE。
-- `screen`、`openudid` 可以不抓；没有 `openudid` 时下游用 `uuid` 顶替。
+- `d_brand` 的明文只出现在不带 `pt_pin` 的请求里，而脚本本来就不处理未登录请求——所以它几乎永远抓不到。脚本改为按平台和机型推导：iOS 一律 `apple`，安卓按型号前缀（`SM-`/`Redmi`/`HUAWEI`/`Pixel` 等）认厂商，认不出来就留空跳过，不编造。
+- `build` 与 `clientVersion` **以 UA 为准**，body 只做兜底。`babelGetGuideTips`、`queryPagePopWindow` 这类接口会把 `clientVersion` 写成 `1.0.0`，一旦让 body 覆盖真值，这个账号的版本号就永久错了。
+- `screen`、`openudid` 可以不抓，脚本不会拿 `uuid` 硬填 `openudid`——少一段字段比多一段编造的字段安全。
 - `h5st` 是每次请求现签的一次性签名，**不写进 JD_COOKIE，也不写进本地缓存**。
 - 系统版本只接受 iOS 13 / 14–19 / 26–27 与 Android 10–16；iOS 27 的 TLS 指纹还没被识别，先套用 iOS 26 的 ClientHello。超出白名单的版本会被丢弃，该账号按「设备字段不全」处理。
 - 设备字段没抓全、且该账号本地没有可用缓存时，脚本会打一行 `⏭️ 设备字段不全，跳过 [账号]: 缺失字段` 并跳过同步——半截的设备身份比没有更危险。抓全一次之后，后续只带 `pt_key`/`pt_pin` 的请求会用缓存补齐。
