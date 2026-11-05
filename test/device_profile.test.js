@@ -57,12 +57,13 @@ function baseFields(extra = {}) {
 
 test('完整字段序列化成 README 约定的顺序与写法', async () => {
     const $ = await globals();
-    const profile = $.normalizeProfileFields(baseFields());
+    const profile = $.finalizeProfile($.normalizeProfileFields(baseFields())).profile;
     const value = $.serializeProfile(profile);
 
     assert.equal(value, FULL_COOKIE);
     assert.ok(value.startsWith('pt_key='), 'JD_COOKIE 必须以 pt_key 开头');
     assert.ok(!value.endsWith(';'), '末尾不带多余分号');
+    assert.ok(value.includes(';openudid=' + UUID), '没有 openudid 时必须用 uuid 顶替');
 });
 
 test('h5st 不参与序列化（每次请求现签）', async () => {
@@ -555,4 +556,40 @@ test('手动导入 curl 时会读 -d 里的设备字段', async () => {
     assert.equal(accounts.length, 1);
     assert.equal(accounts[0].eidToken, EID);
     assert.equal(accounts[0].build, '171135');
+});
+
+// ─────────────────────────────────────────────────────────────
+// UA 清洗：真实 jdapp; UA 尾部拖着 ep/ 密文与 WebView 标识，都不能进 JD_COOKIE
+// ─────────────────────────────────────────────────────────────
+
+const DIRTY_JDAPP_UA =
+    'jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135;jdSupportDarkMode/0;lang/zh_CN;ctype/0;site/CN;' +
+    'ccy/CNY;elder/0;ef/1;' +
+    'ep/%7B%22ciphertype%22%3A5%2C%22cipher%22%3A%7B%22hdid%22%3A%22JM9F1ywUPwflvMIpYPok0tt5k9kW4ArJEU3lfLhxBqw%3D%22%2C%22ts%22%3A1793892593%7D%7D;' +
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148;supportJDSHWK/1;;';
+
+test('jdapp; UA 里的 ep/ 密文段与 WebView 尾巴不会写进 JD_COOKIE', async () => {
+    const g = await globals();
+    const profile = g.normalizeProfileFields({ userAgent: DIRTY_JDAPP_UA, ptPin: 'testuser' });
+    const ua = g.normalizeUserAgent(g.finalizeProfile(profile).profile);
+
+    assert.ok(ua.startsWith('jdapp;iPhone;16.1.50'), '保留 jdapp; 前缀与真实版本');
+    assert.ok(ua.includes('appBuild/171135'), 'appBuild 保留');
+    assert.ok(!ua.includes('ep/'), 'ep/ 是一次性加密指纹，不能进环境变量');
+    assert.ok(!ua.includes('Mozilla'), 'WebView 标识对下游没用，砍掉');
+    assert.ok(!ua.includes('ciphertype'), '密文内容一个字节都不能留');
+});
+
+test('UA 里没有 os/ 段时按 osVersion 补一段，满足「能看出系统版本」', async () => {
+    const g = await globals();
+    const ua = g.normalizeUserAgent({
+        userAgent: 'jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135',
+        platform: 'ios',
+        clientVersion: '16.1.50',
+        build: '171135',
+        osVersion: '18.5'
+    });
+
+    assert.ok(ua.includes('os/18.5'), '缺 os/ 时补上');
+    assert.equal(ua.match(/os\//g).length, 1, '已经有 os/ 的不要再补第二段');
 });

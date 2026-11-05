@@ -59,12 +59,15 @@ const DEVICE_HEADERS = {
 };
 
 /** 完整 JD_COOKIE 值（脚本在设备字段齐全时应产出的形态） */
+// JD_UA_H5 里没有 os/ 段，脚本会按 osVersion 补一段，所以期望值用补全后的形态
+const JD_UA_H5_FULL = JD_UA_H5 + ';os/18.5';
 const FULL_COOKIE =
-    'pt_key=AAJoNEWKEY1234567890;pt_pin=testuser;User-Agent=' + JD_UA_H5 +
+    'pt_key=AAJoNEWKEY1234567890;pt_pin=testuser;User-Agent=' + JD_UA_H5_FULL +
     ';uuid=0123456789abcdef0123456789abcdef01234567' +
     ';x-api-eid-token=' + DEVICE_HEADERS['x-api-eid-token'] +
     ';wg-sdk-token=' + DEVICE_HEADERS['wg-sdk-token'] +
-    ';d_brand=iPhone;d_model=iPhone17,2;osVersion=18.5;build=170980;clientVersion=16.0.0';
+    ';d_brand=iPhone;d_model=iPhone17,2;osVersion=18.5;build=170980;clientVersion=16.0.0' +
+    ';openudid=0123456789abcdef0123456789abcdef01234567';
 
 const FULL_CONFIG = {
     ql_url: 'http://ql.local:5700',

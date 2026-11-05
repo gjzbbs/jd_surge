@@ -562,22 +562,36 @@ function deriveBrand(platform, dModel) {
 }
 
 /**
- * UA 归一成 jdapp; 形态：平台 + App 版本 + appBuild 都在串里。
- * 已经是 jdapp; 的原样保留，不改造真实 UA。
+ * UA 归一成 jdapp; 形态：平台 + App 版本 + appBuild + os 都在串里。
+ * 已经是 jdapp; 的真实 UA 保留原样，只做两处清理：
+ *   - 砍掉 `ep/` 段：那是带一次性时间戳的加密指纹，密文一律不进 JD_COOKIE；
+ *   - 砍掉尾部 `Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 …)` 这段 WebView 标识，
+ *     它对下游没用，只会让环境变量变得难读。
+ * 系统版本没在串里出现时补一段 `os/<版本>`，满足「能看出系统版本」。
  */
 function normalizeUserAgent(profile) {
     const raw = String(profile.userAgent || '').trim();
-    if (/^jdapp;/i.test(raw)) return raw;
-
     const uaInfo = parseUserAgent(raw);
     const platform = profile.platform || uaInfo.platform;
     const clientVersion = profile.clientVersion || uaInfo.clientVersion;
     const build = profile.build || uaInfo.build;
+    const osVersion = profile.osVersion || uaInfo.osVersion;
+
+    if (/^jdapp;/i.test(raw)) {
+        let kept = raw
+            .replace(/;?ep\/[^;]*/gi, '')
+            .replace(/;?Mozilla\/[\s\S]*$/i, '')
+            .replace(/;+\s*$/, '');
+        if (osVersion && !/[;,]os\//i.test(kept)) kept += `;os/${osVersion}`;
+        return kept;
+    }
+
     if (!platform || !clientVersion) return '';
 
     const device = platform === 'android' ? 'android' : 'iPhone';
     const parts = ['jdapp', device, clientVersion, '', '', 'M/5.0'];
     if (build) parts.push(`appBuild/${build}`);
+    if (osVersion) parts.push(`os/${osVersion}`);
     return parts.join(';');
 }
 
@@ -609,8 +623,8 @@ function finalizeProfile(input) {
     // 稳定值——否则这台设备永远是"缺 uuid"，一条都同步不出去
     if (!profile.uuid && profile.ptPin) profile.uuid = deriveUuid(profile.ptPin);
 
-    // openudid 是可选项：抓到就写，抓不到不写。消费方按「没有 openudid 就用 uuid」处理，
-    // 所以这里不拿 uuid 顶替，避免每次同步都多出一段没必要的字段。
+    // openudid 必须出现在 JD_COOKIE 里；没抓到就用 uuid 顶替
+    if (!profile.openudid) profile.openudid = profile.uuid;
 
     const missing = REQUIRED_PROFILE_FIELDS.filter(field => !profile[field]);
     return {
@@ -862,13 +876,18 @@ function mergeIntoCache(ptPin, captured) {
 /**
  * 两个 JD_COOKIE 值是否等价（忽略 h5st、字段顺序、HAR/curl 包装）
  */
+/**
+ * 比较两条 JD_COOKIE 是否代表同一份身份。
+ * 两侧都过一遍 finalizeProfile，让「抓包里没有 openudid」与
+ * 「已写入的 openudid=uuid」被视为同一个设备，而不是每次触发都重写一遍。
+ */
 function isSameCookieValue(left, right) {
     const a = parseCookieInput(left);
     const b = parseCookieInput(right);
     if (!a.length || !b.length) return false;
 
-    const normalizedA = serializeProfile(normalizeProfileFields(a[0]));
-    const normalizedB = serializeProfile(normalizeProfileFields(b[0]));
+    const normalizedA = serializeProfile(finalizeProfile(normalizeProfileFields(a[0])).profile);
+    const normalizedB = serializeProfile(finalizeProfile(normalizeProfileFields(b[0])).profile);
     return normalizedA === normalizedB && normalizedA !== '';
 }
 

@@ -134,13 +134,13 @@ $done()
 写入青龙的不再是 `pt_key=...;pt_pin=...;` 两段式，而是一整条带设备指纹的分号串：
 
 ```
-pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135;uuid=0123456789abcdef0123456789abcdef01234567;x-api-eid-token=jdd...;wg-sdk-token=jdd01...;d_brand=iPhone;d_model=iPhone17,2;osVersion=18.5;build=171135;clientVersion=16.1.50
+pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135;os/18.5;uuid=0123456789abcdef0123456789abcdef01234567;x-api-eid-token=jdd...;wg-sdk-token=jdd01...;d_brand=iPhone;d_model=iPhone17,2;osVersion=18.5;build=171135;clientVersion=16.1.50;openudid=0123456789abcdef0123456789abcdef01234567
 ```
 
 | 字段 | 来源 | 取值要求 |
 |---|---|---|
 | `pt_key`、`pt_pin` | `Cookie` 头 | 登录态，原样保留 |
-| `User-Agent` | `User-Agent` 头 | 统一归一成 `jdapp;` 开头，且能读出系统版本 |
+| `User-Agent` | `User-Agent` 头 | 统一归一成 `jdapp;` 开头，且能读出系统版本；`ep/` 密文段与 `Mozilla/5.0` WebView 尾巴会被砍掉 |
 | `uuid` | body 的 `uuid`（密文 `R4i…` 丢弃） | 32–40 位十六进制；拿不到时按 `pt_pin` 派生一个稳定值 |
 | `x-api-eid-token` | body 的 `x-api-eid-token` | `jdd` 开头，长度 100–400 |
 | `wg-sdk-token` | body 的 `ext` 里的 `sdkToken` | `jdd01` 开头，长度 ≥100 |
@@ -156,7 +156,8 @@ pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135
 - 抓包里的 `uuid`、`d_brand`、`d_model`、`osVersion`、`screen` 经常是 `R4iSK…` 开头的密文。密文一律当成「没抓到」，不写进 JD_COOKIE。
 - `d_brand` 的明文只出现在不带 `pt_pin` 的请求里，而脚本本来就不处理未登录请求——所以它几乎永远抓不到。脚本改为按平台和机型推导：iOS 一律 `apple`，安卓按型号前缀（`SM-`/`Redmi`/`HUAWEI`/`Pixel` 等）认厂商，认不出来就留空跳过，不编造。
 - `build` 与 `clientVersion` **以 UA 为准**，body 只做兜底。`babelGetGuideTips`、`queryPagePopWindow` 这类接口会把 `clientVersion` 写成 `1.0.0`，一旦让 body 覆盖真值，这个账号的版本号就永久错了。
-- `screen`、`openudid` 可以不抓，脚本不会拿 `uuid` 硬填 `openudid`——少一段字段比多一段编造的字段安全。
+- `screen`、`openudid` 在抓包里通常拿不到。`openudid` 一定会写进 JD_COOKIE：抓到就用抓到的，抓不到就用 `uuid` 顶替，保证下游永远能看到一段 `openudid=`。`screen` 抓不到就不写。
+- `jdapp;` 的真实 UA 尾部会拖一段 `ep/%7B%22ciphertype%22…`（带一次性时间戳的加密指纹）和一段 `Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 …)` WebView 标识，两段都会在写入前被砍掉；UA 里没有 `os/` 段时补一段 `os/<系统版本>`，保证「能看出系统版本」。
 - `h5st` 是每次请求现签的一次性签名，**不写进 JD_COOKIE，也不写进本地缓存**。
 - 系统版本只接受 iOS 13 / 14–19 / 26–27 与 Android 10–16；iOS 27 的 TLS 指纹还没被识别，先套用 iOS 26 的 ClientHello。超出白名单的版本会被丢弃，该账号按「设备字段不全」处理。
 - 设备字段没抓全、且该账号本地没有可用缓存时，脚本会打一行 `⏭️ 设备字段不全，跳过 [账号]: 缺失字段` 并跳过同步——半截的设备身份比没有更危险。抓全一次之后，后续只带 `pt_key`/`pt_pin` 的请求会用缓存补齐。
