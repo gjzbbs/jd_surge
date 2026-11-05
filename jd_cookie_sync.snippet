@@ -4,8 +4,7 @@
 
 hostname = api.m.jd.com
 
-; 京东 2026-09 起把 functionId 从 URL query 挪进了 POST 请求体，
-; URL 现在只剩 /client.action?（空 query）。所以不能再靠 functionId 白名单匹配，
-; 否则规则命中数永远是 0。改成匹配 client.action 路径本身，
-; 由脚本内部用 User-Agent + Cookie 做二次过滤。
-^https?:\/\/api\.m\.jd\.com\/client\.action url script-request-header https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.js
+; 京东 2026-09 起把 functionId 和设备指纹（uuid / x-api-eid-token / wg-sdk-token /
+; d_brand / d_model / osVersion / build / clientVersion）全放进了 POST 请求体。
+; 只读请求头永远缺这些字段，所以这里必须用 script-request-body。
+^https?:\/\/api\.m\.jd\.com\/client\.action url script-request-body https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.js

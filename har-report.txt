@@ -1,0 +1,67 @@
+总请求数: 164
+api.m.jd.com 请求数: 14
+client.action 请求数: 11
+
+=== api.m.jd.com 出现过的请求头（次数）===
+  host: 14
+  accept: 14
+  connection: 14
+  accept-language: 14
+  content-length: 14
+  accept-encoding: 14
+  user-agent: 14
+  content-type: 11
+  cookie: 11
+  sec-fetch-site: 7
+  sec-fetch-mode: 7
+  origin: 7
+  referer: 7
+  sec-fetch-dest: 7
+  x-rp-client: 4
+  x-referer-page: 4
+  access-control-request-method: 3
+  access-control-request-headers: 3
+  x-babel-actid: 2
+  j-e-c: 1
+  x-mlaas-at: 1
+  j-e-h: 1
+  x-httpex-retry: 1
+  x-pp-aew: 1
+  jdgs: 1
+  x-referer-package: 1
+
+=== Cookie 里出现过的键 ===
+  3AB9D23F7A4B3C9B, 3AB9D23F7A4B3CSS, __jda, __jdb, __jdc, __jdv, _gia_d, mba_muid, mba_sid, pin_hash, pre_seq, pre_session, pt_key, pt_pin, pwdt_id, sdtoken, shshshfpa, shshshfpb, shshshfpx, unionwsws, unpl, whwswswws, wskey, x-rp-evtoken
+
+=== client.action 请求明细（前 40 条）===
+[0] POST functionId=? | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,accept,content-type,connection,cookie,accept-language,content-length,accept-encoding,user-agent
+[1] POST functionId=uploadPageView | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,j-e-c,accept,x-mlaas-at,j-e-h,x-rp-client,x-httpex-retry,content-type,accept-language,x-pp-aew,accept-encoding,content-length,user-agent,connection,x-referer-page,jdgs,x-referer-package,cookie
+[2] POST functionId=? | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,accept,content-type,connection,cookie,accept-language,content-length,accept-encoding,user-agent
+[3] POST functionId=? | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,accept,content-type,connection,cookie,accept-language,content-length,accept-encoding,user-agent
+[4] POST functionId=logConfig | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,accept,content-type,connection,cookie,accept-language,content-length,accept-encoding,user-agent
+[5] OPTIONS functionId=babelGetGuideTips | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,sec-fetch-site,accept-encoding,access-control-request-method,sec-fetch-mode,accept-language,origin,access-control-request-headers,user-agent,referer,content-length,connection,sec-fetch-dest,accept
+[6] OPTIONS functionId=queryPagePopWindow | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,sec-fetch-site,accept-encoding,access-control-request-method,sec-fetch-mode,accept-language,origin,access-control-request-headers,user-agent,referer,content-length,connection,sec-fetch-dest,accept
+[7] POST functionId=babelGetGuideTips | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,accept,x-babel-actid,sec-fetch-site,x-rp-client,accept-language,accept-encoding,sec-fetch-mode,content-type,origin,user-agent,referer,x-referer-page,content-length,connection,sec-fetch-dest,cookie
+[8] POST functionId=queryPagePopWindow | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,accept,x-babel-actid,sec-fetch-site,x-rp-client,accept-language,accept-encoding,sec-fetch-mode,content-type,origin,user-agent,referer,x-referer-page,content-length,connection,sec-fetch-dest,cookie
+[9] OPTIONS functionId=delivery_component | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,sec-fetch-site,accept-encoding,access-control-request-method,sec-fetch-mode,accept-language,origin,access-control-request-headers,user-agent,referer,content-length,connection,sec-fetch-dest,accept
+[10] POST functionId=delivery_component | eid:- wg:- uuid:- brand:- model:- osV:- build:- cv:-
+     头: host,accept,sec-fetch-site,x-rp-client,accept-language,accept-encoding,sec-fetch-mode,content-type,origin,content-length,user-agent,x-referer-page,referer,connection,sec-fetch-dest,cookie
+
+=== 汇总：client.action 中 带eid=0 带wg=0 带uuid=0 / 共 11 ===
+
+!!! 没有任何 client.action 请求带 x-api-eid-token
+
+=== 不同 User-Agent ===
+  JD4iPhone/16.1.50 CFNetwork/1492.0.1 Darwin/23.3.0
+  JD4iPhone/171135%20(iPhone;%20iOS;%20Scale/3.00);jdmall;iphone;version/16.1.50;build/171135;network/wifi;screen/1290x2796;os/17.3;lang/zh_CN;apmHit/10
+  jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135;jdSupportDarkMode/0;lang/zh_CN;ctype/0;site/CN;ccy/CNY;elder/0;ef/1;ep/%7B%22ciphertype%22%3A5%2C%22cipher%22%3A%7B%22ud%22%3A%22CJS3ZQVsZNZvZtuyCWPrCWDuCQS2ZtZrYzC3ZJu1ZQZuYtC2EWDtCm%3D%3D%22%2C%22sv%22%3A%22CJckCm%3D%3D%22%2C%22iad%22%3A%22%22%7D%2C%22ts%22%3A1793892593%2C%22hdid%22%3A%22JM9F1ywUPwflvMIpYPok0tt5k9kW4ArJEU3lfLhxBqw%3D%22%2C%22version%22%3A%221.0.3%22%2C%22appname%22%3A%22com.360buy.jdmobile%22%2C%22ridx%22%3A-1%7D;Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148;supportJDSHWK/1;

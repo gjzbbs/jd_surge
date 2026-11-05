@@ -10,7 +10,8 @@
 # 因此改为匹配 client.action 路径本身，由脚本内部用 UA + Cookie 过滤。
 #
 # timeout 必须大于脚本内 REQUEST_TIMEOUT × 串行请求数，否则内部超时保护永远不会生效
-jd_cookie_sync = type=http-request,pattern=^https?:\/\/api\.m\.jd\.com\/client\.action,requires-body=0,max-size=0,script-path=https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.js,timeout=20
+# requires-body=1：设备指纹（uuid/eid/wg/机型/系统版本）全在 POST body 里，不取 body 就永远缺字段
+jd_cookie_sync = type=http-request,pattern=^https?:\/\/api\.m\.jd\.com\/client\.action,requires-body=1,max-size=0,script-path=https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.js,timeout=20
 
 [MITM]
 hostname = %APPEND% api.m.jd.com

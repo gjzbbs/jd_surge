@@ -1,0 +1,2 @@
+﻿[main 131b024] fix: notify reason once per hour when device fields are incomplete
+ 1 file changed, 26 insertions(+)

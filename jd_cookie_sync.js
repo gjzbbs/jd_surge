@@ -282,7 +282,7 @@ function parseOsVersion(raw) {
  */
 function parseUserAgent(raw) {
     const ua = String(raw || '');
-    const info = { platform: '', clientVersion: '', build: '' };
+    const info = { platform: '', clientVersion: '', build: '', osVersion: '' };
     if (!ua) return info;
 
     if (/android/i.test(ua)) info.platform = 'android';
@@ -290,6 +290,13 @@ function parseUserAgent(raw) {
 
     const appBuild = ua.match(/appBuild\/(\d{5,8})/i);
     if (appBuild) info.build = appBuild[1];
+
+    // JD4iPhone 的 UA 会把系统版本和 build 明文带在参数里：;os/17.3;build/171135
+    const osTag = ua.match(/[;,]os\/(\d{1,2}(?:[._]\d{1,2})?)/i);
+    if (osTag) info.osVersion = osTag[1].replace(/_/g, '.');
+
+    const buildTag = ua.match(/[;,]build\/(\d{5,8})/i);
+    if (buildTag) info.build = info.build || buildTag[1];
 
     const jdapp = ua.match(/^jdapp;([^;]*);([^;]+)/i);
     if (jdapp) {
@@ -308,6 +315,27 @@ function parseUserAgent(raw) {
 }
 
 /**
+ * uuid 在 body 里经常是密文（R4i…），密文按「没有」处理。
+ * 一个账号的 uuid 必须稳定，否则每次同步都算一台新设备——所以按 ptPin 派生。
+ * 京东只把它当设备标识用，32 位十六进制就够。
+ */
+function deriveUuid(seed) {
+    const text = 'jdsurge:' + String(seed || '');
+    let h1 = 0x811c9dc5;
+    let h2 = 0x01000193;
+    let h3 = 0x9e3779b9;
+    let h4 = 0x85ebca6b;
+    for (let i = 0; i < text.length; i += 1) {
+        const c = text.charCodeAt(i);
+        h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+        h2 = Math.imul(h2 + c, 0x85ebca6b) >>> 0;
+        h3 = Math.imul(h3 ^ (c << 3), 0xc2b2ae35) >>> 0;
+        h4 = Math.imul(h4 + c * 31, 0x27d4eb2f) >>> 0;
+    }
+    return [h1, h2, h3, h4].map(n => (n >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
+/**
  * 把字段字典归一成一个 profile。
  * 所有校验都在这里做——不合格式的字段直接置空，交给缓存回落或跳过。
  */
@@ -315,7 +343,7 @@ function normalizeProfileFields(fields) {
     const source = fields || {};
     const userAgent = String(source.userAgent || '').trim();
     const uaInfo = parseUserAgent(userAgent);
-    const os = parseOsVersion(source.osVersion);
+    const os = parseOsVersion(source.osVersion) || parseOsVersion(uaInfo.osVersion);
 
     return {
         ptKey: String(source.ptKey || '').trim(),
@@ -364,6 +392,108 @@ function profileFromHeaders(headers) {
         clientVersion: headerValue(headers, 'clientVersion'),
         openudid: headerValue(headers, 'openudid'),
         screen: headerValue(headers, 'screen')
+    });
+}
+
+/**
+ * 京东 App 把设备字段放在 client.action 的 POST body 里（query string 形式），
+ * 请求头里根本没有——只读 headers 永远是缺的。
+ *   uuid=...&d_brand=apple&d_model=iPhone16,2&osVersion=...&build=171135&x-api-eid-token=jdd013...
+ */
+function parseRequestBody(body) {
+    const text = String(body || '').trim();
+    const params = {};
+    if (!text) return params;
+
+    if (text.charAt(0) === '{') {
+        try {
+            const json = JSON.parse(text);
+            if (json && typeof json === 'object') {
+                Object.keys(json).forEach(key => {
+                    const value = json[key];
+                    if (value === null || value === undefined) return;
+                    params[key] = typeof value === 'string' ? value : JSON.stringify(value);
+                });
+            }
+        } catch (e) {
+            // body 是 JSON 但解析失败就当没有
+        }
+        return params;
+    }
+
+    text.split('&').forEach(part => {
+        const index = part.indexOf('=');
+        if (index <= 0) return;
+        params[safeDecode(part.slice(0, index))] = safeDecode(part.slice(index + 1));
+    });
+    return params;
+}
+
+function safeDecode(value) {
+    const text = String(value || '').replace(/\+/g, ' ');
+    try {
+        return decodeURIComponent(text);
+    } catch (e) {
+        return text;
+    }
+}
+
+/**
+ * 京东会把部分字段加密成 R4iSK... 传过来，加密值不能当明文用
+ */
+function isCipherValue(value) {
+    return /^R4i[SK]/.test(String(value || '').trim());
+}
+
+function pickParam(params, names) {
+    for (let i = 0; i < names.length; i++) {
+        const name = names[i];
+        if (!Object.prototype.hasOwnProperty.call(params, name)) continue;
+        const value = String(params[name] || '').trim();
+        if (!value || isCipherValue(value)) continue;
+        return value;
+    }
+    return '';
+}
+
+/**
+ * wg-sdk-token 不单独成参，藏在 ext 的 sdkToken 里：
+ *   ext={"prstate":"0","sdkToken":"jdd013..."}
+ */
+function pickExtToken(params) {
+    const raw = params && params.ext;
+    if (!raw) return '';
+    try {
+        const ext = JSON.parse(raw);
+        if (ext && typeof ext === 'object') return String(ext.sdkToken || '').trim();
+    } catch (e) {
+        return '';
+    }
+    return '';
+}
+
+/**
+ * 从「请求头 + 请求体」构建 profile：body 里的明文优先，header 兜底
+ */
+function profileFromRequest(headers, body) {
+    const base = profileFromHeaders(headers);
+    const params = parseRequestBody(body);
+    if (!Object.keys(params).length) return base;
+
+    return normalizeProfileFields({
+        ptKey: base.ptKey,
+        ptPin: base.ptPin,
+        userAgent: base.userAgent,
+        uuid: pickParam(params, ['uuid', 'openudid']) || base.uuid,
+        eidToken: pickParam(params, ['x-api-eid-token']) || base.eidToken,
+        wgToken: pickParam(params, ['wg-sdk-token']) || pickExtToken(params) || base.wgToken,
+        dBrand: pickParam(params, ['d_brand']) || base.dBrand,
+        dModel: pickParam(params, ['d_model']) || base.dModel,
+        osVersion: pickParam(params, ['osVersion']) || base.osVersion,
+        build: pickParam(params, ['build']) || base.build,
+        clientVersion: pickParam(params, ['clientVersion']) || base.clientVersion,
+        openudid: pickParam(params, ['openudid']) || base.openudid,
+        screen: pickParam(params, ['screen']) || base.screen
     });
 }
 
@@ -434,6 +564,10 @@ function finalizeProfile(input) {
 
     profile.userAgent = normalizeUserAgent(profile);
     if (!/^jdapp;/i.test(profile.userAgent)) profile.userAgent = '';
+
+    // 抓包里的 uuid 十有八九是密文，密文按没有处理；缓存也没有就按 ptPin 派生一个
+    // 稳定值——否则这台设备永远是"缺 uuid"，一条都同步不出去
+    if (!profile.uuid && profile.ptPin) profile.uuid = deriveUuid(profile.ptPin);
 
     const missing = REQUIRED_PROFILE_FIELDS.filter(field => !profile[field]);
     return {
@@ -558,7 +692,10 @@ function parseHarCookie(raw) {
     const accounts = [];
     for (const entry of entries) {
         if (!entry || !entry.request) continue;
-        const profile = profileFromHeaders(headersFromHarRequest(entry.request));
+        // HAR 里 request.postData.text 就是 client.action 的 query 串，设备字段在里面
+        const postData = entry.request.postData;
+        const body = postData && typeof postData.text === 'string' ? postData.text : '';
+        const profile = profileFromRequest(headersFromHarRequest(entry.request), body);
         if (profile.ptKey && profile.ptPin) accounts.push(profile);
     }
     return accounts;
@@ -579,7 +716,9 @@ function parseCurlCookie(raw) {
     const cookieArg = raw.match(/(?:-b|--cookie)\s+(['"])([\s\S]*?)\1/);
     if (cookieArg && !headerValue(headers, 'Cookie')) headers.Cookie = cookieArg[2];
 
-    const profile = profileFromHeaders(headers);
+    // curl -d / --data / --data-raw 里的 query 串同样带设备字段
+    const dataArg = raw.match(/(?:--data-raw|--data-binary|--data|-d)\s+(['"])([\s\S]*?)\1/);
+    const profile = profileFromRequest(headers, dataArg ? dataArg[2] : '');
     return profile.ptKey && profile.ptPin ? [profile] : [];
 }
 
@@ -604,6 +743,77 @@ function readCachedProfile(ptPin) {
     const accounts = parseCookieInput(cached);
     const matched = accounts.find(account => account.ptPin === ptPin);
     return normalizeProfileFields(matched || accounts[0] || null);
+}
+
+/**
+ * 部分字段缓存：单次 client.action 只带一部分设备字段（uuid 在 startup、
+ * eid 在 MessageCenter、wg 藏在 ext 里），需要一个"攒字段"的地方。
+ * 独立键存放，不碰 jd_cookie_cache_（那个键只在同步成功后写）。
+ */
+function partialKeys(ptPin) {
+    return { cookie: 'jd_cookie_partial_' + ptPin };
+}
+
+function readPartialProfile(ptPin) {
+    const raw = $.getval(partialKeys(ptPin).cookie);
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        return normalizeProfileFields(parsed);
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * 本次抓包是否带到了设备字段（只有 pt_key/pt_pin 的请求很常见，不能拿它覆盖缓存）
+ */
+function hasDeviceFields(profile) {    if (!profile) return false;
+    return !!(profile.userAgent || profile.uuid || profile.eidToken || profile.wgToken
+        || profile.dBrand || profile.dModel || profile.osVersion
+        || profile.build || profile.clientVersion);
+}
+
+/**
+ * 单次 client.action 只带一部分字段：uuid 在 startup、eid 在 MessageCenter、
+ * wg 藏在 ext 里……所以每次抓到什么就往缓存里合并什么，只覆盖非空字段，
+ * 绝不把已有的好字段抹成空。攒齐 10 个字段后才会真正写青龙。
+ */
+function mergeIntoCache(ptPin, captured) {
+    if (!ptPin || !captured || !hasDeviceFields(captured)) return readPartialProfile(ptPin);
+
+    const keys = partialKeys(ptPin);
+    const partialCached = readPartialProfile(ptPin);
+    const syncCached = readCachedProfile(ptPin);
+    // 优先级：本次抓到的 > 攒了一半的部分缓存 > 上次同步成功的完整值
+    const pick = (field) => captured[field]
+        || (partialCached && partialCached[field])
+        || (syncCached && syncCached[field])
+        || '';
+
+    const merged = normalizeProfileFields({
+        ptKey: captured.ptKey || (partialCached && partialCached.ptKey) || (syncCached && syncCached.ptKey) || '',
+        ptPin: ptPin,
+        userAgent: pick('userAgent'),
+        uuid: pick('uuid'),
+        eidToken: pick('eidToken'),
+        wgToken: pick('wgToken'),
+        dBrand: pick('dBrand'),
+        dModel: pick('dModel'),
+        osVersion: pick('osVersion'),
+        build: pick('build'),
+        clientVersion: pick('clientVersion'),
+        openudid: pick('openudid'),
+        screen: pick('screen')
+    });
+
+    const serialized = JSON.stringify(merged);
+    if (serialized !== $.getval(keys.cookie)) {
+        $.setval(serialized, keys.cookie);
+        $.log(`📥 设备字段缓存已更新 [${ptPin}]`);
+    }
+    return merged;
 }
 
 /**
@@ -1134,7 +1344,9 @@ async function runManualImport(payload) {
             return;
         }
 
-        const captured = profileFromHeaders(headers);
+        // 设备字段在 client.action 的 POST body 里，请求头里没有：
+        // 只读 headers 会永远缺 uuid / eid / wg / 机型 / 系统版本
+        const captured = profileFromRequest(headers, typeof $request.body === 'string' ? $request.body : '');
         const capturedCheck = validateCapturedProfile(captured);
         if (!capturedCheck.valid) {
             $.done({});
@@ -1152,9 +1364,10 @@ async function runManualImport(payload) {
             $.log(`🧹 已去除 pt_key 的 ${APP_OPEN_PREFIX} 前缀`);
         }
 
-        // 单条请求缺几个设备头很正常（启动时会并发几十个 /client.action），
-        // 用该账号上次抓到的完整值补齐；补不齐就跳过——半截设备身份比没有更危险
-        const resolved = resolveProfile(captured, readCachedProfile(captured.ptPin));
+        // 单次请求只带一部分设备字段（uuid 在 startup、eid 在 MessageCenter），
+        // 先按字段合并进缓存，攒齐了再同步；补不齐就跳过——半截设备身份比没有更危险
+        const mergedCache = mergeIntoCache(captured.ptPin, captured);
+        const resolved = resolveProfile(captured, mergedCache);
 
         if (!resolved.complete) {
             const labels = resolved.missing.map(field => FIELD_LABELS[field]).join(',');

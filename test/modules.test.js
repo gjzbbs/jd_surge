@@ -28,7 +28,7 @@ test('触发正则不依赖 URL 里的 functionId', () => {
 
 test('触发正则能匹配 2026-09 抓包里的真实 URL 形态', () => {
     const patterns = [
-        readSource('snippet').match(/^(\^https\?:[^ ]+) url script-request-header/m)[1],
+        readSource('snippet').match(/^(\^https\?:[^ ]+) url script-request-(?:header|body)/m)[1],
         readSource('sgmodule').match(/pattern=(\^https\?:[^,]+),/)[1]
     ];
 
@@ -78,8 +78,18 @@ test('sgmodule 声明了 MITM hostname', () => {
     assert.match(readSource('sgmodule'), /\[MITM\][\s\S]*hostname\s*=\s*%APPEND%\s*api\.m\.jd\.com/);
 });
 
-test('sgmodule 使用 requires-body=0（脚本只读请求头）', () => {
-    assert.match(readSource('sgmodule'), /requires-body=0/);
+test('sgmodule 使用 requires-body=1（设备字段在 POST 体里）', () => {
+    // 京东把 uuid / x-api-eid-token / wg-sdk-token / d_brand / d_model /
+    // osVersion / build / clientVersion 全放在 client.action 的 POST body 里，
+    // 请求头里一个都没有。requires-body=0 会让 7 个必填字段永远缺失。
+    assert.match(readSource('sgmodule'), /requires-body=1/);
+});
+
+test('Quantumult X 用 script-request-body 才能读到设备字段', () => {
+    // script-request-header 在 QX 里拿不到 $request.body，而设备字段全在 body。
+    // 退化成 header 版本会让整条链路重新哑掉。
+    assert.match(readSource('snippet'), /url script-request-body/);
+    assert.ok(!readSource('snippet').includes('script-request-header'), 'snippet 退回了 script-request-header');
 });
 
 test('config_panel 只接线 smart-check 与 clear-cache', () => {

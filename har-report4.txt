@@ -1,0 +1,11 @@
+=== 32-40 位 hex 候选 ===
+  [body] uuid=127debd6ef921aa1cd0b6f6ac37e95dfdb369cc3
+
+=== 设备类 cookie 完整长度 ===
+  mba_muid len=42 head=17938926000392007199865.1901.17938926000
+  3AB9D23F7A4B3C9B len=90 head=LXVQYSEX562XKXP26PTTOXFESNUPTB4NERHAQOFM
+  3AB9D23F7A4B3CSS len=128 head=jdd03LXVQYSEX562XKXP26PTTOXFESNUPTB4NERH
+  _gia_d len=1 head=1
+  shshshfpa len=47 head=bd3fcab2-341a-51d5-c685-f6d603636539-176
+  shshshfpb len=100 head=BApXWqmNHr8RAyWSixl2_YXRMn6G4pdTjBiXEXj9
+  shshshfpx len=47 head=bd3fcab2-341a-51d5-c685-f6d603636539-176

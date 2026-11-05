@@ -155,7 +155,9 @@ test('没有缓存且字段不全时不完整，调用方据此跳过', async ()
     );
 
     assert.equal(resolved.complete, false);
-    assert.ok(resolved.missing.includes('uuid'));
+    // uuid 抓包常是密文，密文按没有处理后会按 ptPin 派生稳定值，不再算缺失项
+    assert.ok(/^[0-9a-f]{32}$/.test(resolved.profile.uuid), 'uuid 缺失时派生 32 位十六进制');
+    assert.ok(!resolved.missing.includes('uuid'));
     assert.ok(resolved.missing.includes('eidToken'));
 });
 
@@ -444,4 +446,113 @@ test('手动导入：缓存也没有且字段不全时跳过并提示', async ()
 
     assert.equal(requests.length, 0, '半截身份不写进青龙');
     assert.ok(JSON.stringify(notifications).includes('testuser'), '要告知用户哪个账号被跳过');
+});
+
+// ─────────────────────────────────────────────────────────────
+// 真实抓包形态：设备字段在 POST body 的 query 串里，不在请求头
+// ─────────────────────────────────────────────────────────────
+
+const HAR_UA =
+    'JD4iPhone/171135 (iPhone; iOS 17.3; Scale/3.00);jdmall;iphone;version/16.1.50;build/171135;network/wifi;screen/1290x2796;os/17.3;lang/zh_CN;apmHit/10';
+
+function harBody(extra = '') {
+    return [
+        'appid=MessageCenter',
+        'build=171135',
+        'clientVersion=16.1.50',
+        'd_brand=apple',
+        'd_model=iPhone16%2C2',
+        'x-api-eid-token=' + encodeURIComponent(EID),
+        'ext=' + encodeURIComponent(JSON.stringify({ prstate: '0', sdkToken: WG })),
+        extra
+    ].filter(Boolean).join('&');
+}
+
+test('设备字段从 POST body 里取：请求头一个设备字段都没有', async () => {
+    const g = await globals();
+    const profile = g.profileFromRequest({ Cookie: VALID_COOKIE, 'User-Agent': HAR_UA }, harBody());
+
+    assert.equal(profile.eidToken, EID, 'x-api-eid-token 在 body 里');
+    assert.equal(profile.wgToken, WG, 'wg-sdk-token 藏在 ext.sdkToken 里');
+    assert.equal(profile.dBrand, 'apple');
+    assert.equal(profile.dModel, 'iPhone16,2');
+    assert.equal(profile.build, '171135');
+    assert.equal(profile.clientVersion, '16.1.50');
+    assert.equal(profile.osVersion, '17.3', 'osVersion 从 UA 的 ;os/17.3 兜底');
+});
+
+test('body 里的密文（R4i…）当没有，不能进 profile', async () => {
+    const g = await globals();
+    const body = [
+        'uuid=R4iSKKKKKKKMOmXLKG0KCKqNCOiR8t3SqG38I3rh',
+        'd_brand=R4iSKKKKKKKMO0iiACrTLGLG0M6fLGKKKK%3D%3D',
+        'd_model=R4iSKKKKKKKMO8iCyCtFIzU00zOMKQchYJqAKKKK',
+        'osVersion=R4iSKKKKKKKMOzC01zCQKFpbSFmOKKKK'
+    ].join('&');
+
+    const profile = g.profileFromRequest({ Cookie: VALID_COOKIE, 'User-Agent': HAR_UA }, body);
+
+    assert.equal(profile.uuid, '', '密文 uuid 不能当明文用');
+    assert.equal(profile.dBrand, '');
+    assert.equal(profile.dModel, '');
+    assert.equal(profile.osVersion, '17.3', '密文 osVersion 丢掉后只剩 UA 兜底');
+});
+
+test('body 明文优先于请求头（同名字段以 body 为准）', async () => {
+    const g = await globals();
+    const profile = g.profileFromRequest(
+        { Cookie: VALID_COOKIE, 'User-Agent': HAR_UA, build: '111111', d_brand: 'Samsung' },
+        'build=171135&d_brand=apple'
+    );
+
+    assert.equal(profile.build, '171135');
+    assert.equal(profile.dBrand, 'apple');
+});
+
+test('请求体是空串或 JSON 时不炸，回落到请求头', async () => {
+    const g = await globals();
+    const withHeaders = g.profileFromRequest(DEVICE_HEADERS_WITH_COOKIE(), '');
+    assert.equal(withHeaders.eidToken, EID, '空 body 要用请求头里的值');
+
+    const jsonBody = g.profileFromRequest({ Cookie: VALID_COOKIE, 'User-Agent': HAR_UA }, '{"build":"171135"}');
+    assert.equal(jsonBody.build, '171135', 'JSON body 也能取到字段');
+});
+
+function DEVICE_HEADERS_WITH_COOKIE() {
+    return { ...DEVICE_HEADERS, Cookie: VALID_COOKIE };
+}
+
+test('手动导入 HAR 时会读 request.postData 里的设备字段', async () => {
+    const g = await globals();
+    const har = JSON.stringify({
+        log: {
+            entries: [{
+                request: {
+                    url: 'https://api.m.jd.com/client.action',
+                    method: 'POST',
+                    headers: [
+                        { name: 'Cookie', value: VALID_COOKIE },
+                        { name: 'User-Agent', value: HAR_UA }
+                    ],
+                    postData: { mimeType: 'application/x-www-form-urlencoded', text: harBody() }
+                }
+            }]
+        }
+    });
+
+    const accounts = g.parseCookieInput(har);
+    assert.equal(accounts.length, 1);
+    assert.equal(accounts[0].eidToken, EID);
+    assert.equal(accounts[0].wgToken, WG);
+    assert.equal(accounts[0].dModel, 'iPhone16,2');
+});
+
+test('手动导入 curl 时会读 -d 里的设备字段', async () => {
+    const g = await globals();
+    const curl = `curl 'https://api.m.jd.com/client.action' -H 'Cookie: ${VALID_COOKIE}' -H 'User-Agent: ${HAR_UA}' --data-raw '${harBody()}'`;
+
+    const accounts = g.parseCookieInput(curl);
+    assert.equal(accounts.length, 1);
+    assert.equal(accounts[0].eidToken, EID);
+    assert.equal(accounts[0].build, '171135');
 });

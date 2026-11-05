@@ -1,0 +1,110 @@
+=== 全 HAR 关键字命中（任意域名 / 头 / body）===
+api.m.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | d_brand | header=false body=true cookie=false
+api.m.jd.com | POST | d_model | header=false body=true cookie=false
+api.m.jd.com | POST | osversion | header=false body=true cookie=false
+api.m.jd.com | POST | clientversion | header=false body=true cookie=false
+api.m.jd.com | POST | x-api-eid-token | header=false body=true cookie=false
+api.m.jd.com | POST | d_brand | header=false body=true cookie=false
+api.m.jd.com | POST | d_model | header=false body=true cookie=false
+api.m.jd.com | POST | clientversion | header=false body=true cookie=false
+api.m.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | d_brand | header=false body=true cookie=false
+api.m.jd.com | POST | d_model | header=false body=true cookie=false
+api.m.jd.com | POST | osversion | header=false body=true cookie=false
+api.m.jd.com | POST | clientversion | header=false body=true cookie=false
+api.m.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | d_brand | header=false body=true cookie=false
+api.m.jd.com | POST | d_model | header=false body=true cookie=false
+api.m.jd.com | POST | osversion | header=false body=true cookie=false
+api.m.jd.com | POST | clientversion | header=false body=true cookie=false
+api.m.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | d_brand | header=false body=true cookie=false
+api.m.jd.com | POST | d_model | header=false body=true cookie=false
+api.m.jd.com | POST | osversion | header=false body=true cookie=false
+api.m.jd.com | POST | clientversion | header=false body=true cookie=false
+api.m.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | d_brand | header=false body=true cookie=false
+api.m.jd.com | POST | d_model | header=false body=true cookie=false
+api.m.jd.com | POST | osversion | header=false body=true cookie=false
+api.m.jd.com | POST | clientversion | header=false body=true cookie=false
+api.m.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | clientversion | header=false body=true cookie=false
+api.m.jd.com | POST | x-api-eid-token | header=false body=true cookie=false
+api.m.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | clientversion | header=false body=true cookie=false
+api.m.jd.com | POST | x-api-eid-token | header=false body=true cookie=false
+api.m.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | clientversion | header=false body=true cookie=false
+uranus.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | x-api-eid-token | header=false body=true cookie=false
+api.m.jd.com | POST | uuid | header=false body=true cookie=false
+api.m.jd.com | POST | d_model | header=false body=true cookie=false
+api.m.jd.com | POST | osversion | header=false body=true cookie=false
+uranus.jd.com | POST | uuid | header=false body=true cookie=false
+uranus.jd.com | POST | uuid | header=false body=true cookie=false
+
+=== 域名一览 ===
+  mars.jd.com: 66
+  storage.360buyimg.com: 17
+  api.m.jd.com: 14
+  perf.m.jd.com: 8
+  m15.360buyimg.com: 7
+  m.360buyimg.com: 6
+  discover.300hu.com: 6
+  h5speed.m.jd.com: 6
+  device-security-url.jd.com: 3
+  uranus.jd.com: 3
+  anti-sdk-report.m.jd.com: 2
+  mllog.jd.com: 2
+  ex.m.jd.com: 2
+  pro.m.jd.com: 2
+  waapdg.jd.com: 2
+  jra.jd.com: 2
+  cactus.jd.com: 2
+  img10.360buyimg.com: 2
+  sdkfp.jd.com: 1
+  dns.jd.com: 1
+  img11.360buyimg.com: 1
+  vod.300hu.com: 1
+  cltm.jd.com: 1
+  img30.360buyimg.com: 1
+  imgcps.jd.com: 1
+  803ad88c9c634ab3312573630a076ace.jddebug.com: 1
+  sh.jd.com: 1
+  policy.jd.com: 1
+  im-x.jd.com: 1
+  sso.jd.com: 1
+
+=== 关键 Cookie 值 ===
+  pt_pin = jd_wPejweNafKmx
+  pwdt_id = jd_wPejweNafKmx
+  wskey = AAJq2NOkAECfxt8oWdM543pEa_vBsTazUh1ZoFX7cXCUdSFPS6nI_kPy6AnDKtS03RVqsGxlRP_xC4yk...(len=96)
+  whwswswws = JD0211d47dab5wqdGaXf179389259186207D0aoO20WEkMzyW-eG8a4rG-civc3Lb5nt116BpnUTj4CC...(len=271)
+  unionwsws = {"jmafinger":"JD0211d47dab5wqdGaXf179389259186207D0aoO20WEkMzyW-eG8a4rG-civc3Lb5...(len=422)
+  sdtoken = AAbEsBpEIOVjqTAKCQtvQu172Lto7o0vkhnWjtqtqIvmYrRshW0JVnvRCj2EXsPKkN17OZZVy8aF7_Lh...(len=156)
+  __jda = 122270672.17938926000392007199865.1793892600.1793892600.1793892600.1
+  3AB9D23F7A4B3C9B = LXVQYSEX562XKXP26PTTOXFESNUPTB4NERHAQOFMKK5ZNJCQOZVNJGQPHTBMBUAJFGRYTXIOWU5RPWJN...(len=90)
+
+=== client.action POST body 样本（截断 600 字符）===
+--- https://api.m.jd.com/client.action (len=664)
+    uuid=R4iSKKKKKKKMOmXLKG0KCKqNCOiR8t3SqG38I3rh%2FtGjzAZbvVQxiItQw7nadINT%2BDZlAiueKKKK&body=R4iSKKKKKKKMO6jWys1EV7AAhvZABMtmJg1UivSgg0zFBU%2BkINc0Ac00zgeeV9THyuxCIy9DJO8PyvZvnNl7KYXys0CgM0KMwp7LGQ5yaVPSZs6Sb2rkaWnraWHgaWrfbqwUKZebufOAuGTyM7BJeHgDvWftamQkMtYOqKKKKK%3D%3D&appid=mpaas2&sign=fd5ada8d0d1ec2b756ab65d5094ed26e1dd44c9aa0aefdd1ba067dda42848603&d_model=R4iSKKKKKKKMO8iCyCtFIzU00zOMKQchYJqAKKKK&cyberTest=0&clientVersion=16.1.50&screen=R4iSKKKKKKKMOzC0itJGCtA3DKCKgf9tOKuKKKK%3D&osVersion=R4iSKKKKKKKMOzC01zCQKFpbSFmOKKKK&partner=apple&functionId=startup&t=1793892591981&d_brand=R4iSKKKKKKKMO0
+--- https://api.m.jd.com/client.action (len=2250)
+    appid=MessageCenter&avifSupport=1&body=%7B%22lng%22%3A%22102.51874%22%2C%22lat%22%3A%2224.298111%22%2C%22pageId%22%3A%22Home_Main%22%7D&build=171135&client=apple&clientVersion=16.1.50&d_brand=apple&d_model=iPhone16%2C2&ef=1&eid=eidI274f8123bbsdzeUNcF6NT5mqnca5GX62Kc3lDviULvjtPWVW5JxSSTWuvKqYdkDgAzhuyYkG6GOYvg0C4mhSmeB/wYMbnMoSVspDvnX0w0a9uqRV&ep=%7B%22ciphertype%22%3A5%2C%22cipher%22%3A%7B%22screen%22%3A%22CJS5CMeyDzu2%22%2C%22wifiBssid%22%3A%22YzGzYzK5DNTsZWO2CNS5DwHvDJG2CJO2CWO0DWZuDQY%3D%22%2C%22osVersion%22%3A%22CJckCm%3D%3D%22%2C%22area%22%3A%22CtVpCtS1EP8yCtU5XzU3CzO4%22%2C%22openudid%22
+--- https://api.m.jd.com/client.action (len=664)
+    uuid=R4iSKKKKKKKMOmXLKG0KCKqNCOiR8t3SqG38I3rh%2FtGjzAZbvVQxiItQw7nadINT%2BDZlAiueKKKK&body=R4iSKKKKKKKMO6jWys1EV7AAhvZABMtmJg1UivSgg0zFBU%2BkINc0Ac00zgeeV9THyuxCIy9DJO8PyvZvnNl7KYXys0CgM0KMwp7LGQ5yaVPSZs6Sb2rkaWnraWHgaWHkZKIUKZebufOAuGTyM7BJeHgDvWftamRdI9YyqKKKKK%3D%3D&appid=mpaas2&sign=0b62556ec4109e07cb50c05c1dbffdb9294f2fd465c86d90364148787101eae3&d_model=R4iSKKKKKKKMO8iCyCtFIzU00zOMKQchYJqAKKKK&cyberTest=0&clientVersion=16.1.50&screen=R4iSKKKKKKKMOzC0itJGCtA3DKCKgf9tOKuKKKK%3D&osVersion=R4iSKKKKKKKMOzC01zCQKFpbSFmOKKKK&partner=apple&functionId=startup&t=1793892592722&d_brand=R4iSKKKKKKKMO0
+--- https://api.m.jd.com/client.action (len=605)
+    uuid=R4iSKKKKKKKMOmXLKG0KCKqNCOiR8t3SqG38I3rh%2FtGjzAZbvVQxiItQw7nadINT%2BDZlAiueKKKK&body=R4iSKKKKKKKMO6jWyuxCIy9DJO9VivAgyer39vFIUUeiAFLEhGGAvPWw55YxV6GbwfHwQwdVvOFuGtTIc0RANYRcqkz0uCeMOC9YgHYKCLbrhu0KKKK%3D&appid=mpaas2&sign=9edb6d97e465f6ccad4320a0de6a5bb6f4115472b53576865cd344b0c8013109&d_model=R4iSKKKKKKKMO8iCyCtFIzU00zOMKQchYJqAKKKK&cyberTest=0&clientVersion=16.1.50&screen=R4iSKKKKKKKMOzC0itJGCtA3DKCKgf9tOKuKKKK%3D&osVersion=R4iSKKKKKKKMOzC01zCQKFpbSFmOKKKK&partner=apple&functionId=strategy&t=1793892592727&d_brand=R4iSKKKKKKKMO0iiACrTLGLG0M6fLGKKKK%3D%3D&client=2&sdkVersion=E1.1&build=1
+--- https://api.m.jd.com/client.action (len=477)
+    client=apple&clientVersion=R4iSKKKKKKKKOzC00zFUCzUKKRuMLiORKKKK&build=R4iSKKKKKKKKOzC0DzG0DqUKJaKNeqYKKKK%3D&t=1793892596858&sdkVersion=E1.0&uuid=R4iSKKKKKKKKOmXLKG0KCKqNCOiR8t3SqG38I3rh%2FtGjzAZbvVQxiItQw7nadINT%2BDZlAiueKKKK&functionId=logConfig&body=R4iSKKKKKKKKO6jWIsme8OnHivTADBcmD7GmJ0uzI7S0Cbc0ItTAJBWmCO82KqeZWHexAkuevHaxPeRVZgXOvmouZfWx%2BsWwoodWKAWKfttxZAbwvGLvC%2F2NvWeL3epHqVuKKKK%3D&appid=talos&sign=d92d7eae7f9ae82abf1f694e7766f538210e586b03d00f251d4535693b374b3c
+--- https://api.m.jd.com/client.action (len=5463)
+    body=%7B%22tipsBusinessId%22%3A%220%22%2C%22activityId%22%3A%223b86xJ8EVja357au9NNG6ZSeV3Fw%22%2C%22plusExpoTimes%22%3A%5B%221791626310050%22%2C%221791626363890%22%2C%221791626411428%22%2C%221792844699583%22%2C%221792858618907%22%2C%221792858658644%22%2C%221792858686746%22%2C%221793333502744%22%2C%221793589770128%22%2C%221793589783008%22%5D%2C%22plusClickTimes%22%3A%5B%221770550695105%22%2C%221770726040424%22%5D%2C%22plusCloseTimes%22%3A%5B%5D%2C%22tipsExpoTimes%22%3A%5B%5D%2C%22tipsClickTimes%22%3A%5B%5D%2C%22tipsCloseTimes%22%3A%5B%5D%2C%22pageBgColor%22%3A%22%23f2f2f2%22%2C%22channel%22%3A%
+
+=== UA 关键字段提取 ===
+  UA[JD4iPhone/16.1.50 CFNetwork/1492.0.1 Dar...] os=- build=- appBuild=- version=- screen=-
+  UA[JD4iPhone/171135%20(iPhone;%20iOS;%20Sca...] os=17.3 build=171135 appBuild=- version=16.1.50 screen=1290x2796
+  UA[jdmall;iphone;version/16.1.50;build/1711...] os=17.3 build=171135 appBuild=- version=16.1.50 screen=1290x2796
+  UA[ffmpeg/4.0;jdmall;iphone;version/16.1.50...] os=- build=171135 appBuild=- version=16.1.50 screen=-
+  UA[jdapp;iPhone;16.1.50;;;M/5.0;appBuild/17...] os=- build=- appBuild=171135 version=- screen=-
+  UA[JD4iPhone/171135 (iPhone; iOS 17.3; Scal...] os=- build=- appBuild=- version=- screen=-
+  UA[jdapp;iPhone;16.1.50;;;M/5.0;appBuild/17...] os=- build=- appBuild=171135 version=- screen=-
