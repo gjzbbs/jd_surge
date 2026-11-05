@@ -7,7 +7,7 @@ Surge / Quantumult X proxy scripts that scrape JD (京东) cookies from intercep
 No bundler, no linter, no CI. `package.json` exists **only** to pin the test command — the shipped scripts have zero dependencies and are deployed by raw GitHub URL, never from `node_modules`.
 
 ```sh
-npm test          # node --test test/*.test.js  (59 tests, ~6s, no deps)
+npm test          # node --test test/*.test.js  (87 tests, ~6s, no deps)
 ```
 
 Run the glob, not bare `node --test`: Node treats every `.js` under `test/` as a test file, so `test/helpers/harness.js` would run as a phantom empty test.
@@ -80,6 +80,28 @@ Do **not** put a `functionId=` allowlist back into that regex. JD moved `functio
 1. `User-Agent` must match `^(?:JD4iPhone|jdapp;)/i` — filters out browsers and third-party clients. Both prefixes are real JD-app UAs seen in the 2026-09 capture: `JD4iPhone/16.0.0 CFNetwork/...` (native stack, replaces the old `JD4iPhone/167783 (iPhone;...)` form) and `jdapp;iPhone;16.0.0;;;M/5.0;...` (in-app H5 / `pro.m.jd.com`). Dropping the `jdapp;` branch loses roughly a third of the cookie-bearing requests.
 2. Guest cookies rejected: `pt_key` starting with `fake_`, or `pt_pin` equal to `guest`.
 3. Time-interval throttle, default 1800s via `ql_update_interval`; bypassed when the cookie value actually changed, or when the bypass flag is set.
+4. Profile incomplete after merging the per-`pt_pin` cache — log `⏭️ 设备字段不全，跳过 [pin]: …` and stop. Never push a half-filled fingerprint; a wrong `uuid`/`eid` pair is worse than no update.
+
+## JD_COOKIE carries a device fingerprint, not just pt_key/pt_pin
+
+The env value pushed to Qinglong is a semicolon chain in a fixed order:
+
+```
+pt_key=…;pt_pin=…;User-Agent=jdapp;…;uuid=…;x-api-eid-token=…;wg-sdk-token=…;d_brand=…;d_model=…;osVersion=…;build=…;clientVersion=…
+```
+
+`SERIALIZE_ORDER` in `jd_cookie_sync.js` is the single source of that order; `serializeProfile()` walks it. Do not hand-build this string anywhere else.
+
+- **Input** can be a HAR (`log.entries[].request.headers`), a `curl` command, or the semicolon form itself. `parseCookieInput()` detects and dispatches; every path funnels into `profileFromHeaders()`/`parseCookieChain()`, so all three shapes must stay equivalent (there is a test for exactly that).
+- **The `User-Agent` value is not escaped.** JD app UAs are full of semicolons (`jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135`), so the chain is split on `;<known field>=`, never on bare `;`. `splitFieldChunks()` does this with a lookahead over `FIELD_ALIASES`.
+- **Field aliases are collapsed but never rewritten silently.** `FIELD_ALIASES` maps capture names (`x-api-eid-token`, `wg-sdk-token`) and short names (`eid_token`, `wg_token`) onto one canonical key; `canonField()` is case/`-`/`_` insensitive.
+- **`osVersion` is allowlisted.** `OS_ALLOWLIST` = iOS 13–19 + 26–27, Android 10–16. Anything else is dropped, which makes the profile incomplete. iOS 27 reuses the iOS 26 ClientHello (`CLIENT_HELLO_ALIAS`).
+- **Plaintext models only.** `normalizeDeviceValue()` drops values that look base64-ish; `platformMatchesBrand()` drops an iOS model on an Android UA and vice versa.
+- **`h5st` is never persisted** — not in the env value, not in the local cache. It is a per-request signature.
+- **Incomplete profiles are skipped** unless a cached profile for the same `pt_pin` can fill the gaps (`resolveProfile(captured, cached)`). `pt_key`/`pt_pin` always come from the live capture and are never taken from cache.
+- `isSameCookieValue()` compares semantically (parse both sides, ignore order/extra fields), so a Qinglong row holding only `pt_key`/`pt_pin` is **not** equal to the full value and will be rewritten.
+
+**Manual import entry.** `$argument` matching `push` or `push:<text>` short-circuits the whole intercept path (`readImportPayload()` → `runManualImport()`), because that mode has no useful `$request`. Text can be inline after `push:` or come from the `jd_import_payload` store key when it is too long for a module argument. It reuses exactly the same `parseCookieInput` → `resolveProfile` → `serializeProfile` → `syncToQinglong` chain, so an imported account gets the same validation and the same cache write as a captured one. Adding a second code path here — do not; keep import and capture flowing through the same functions.
 
 ## Storage keys
 

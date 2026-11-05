@@ -52,6 +52,28 @@
         line('✅ 远端脚本可下载 [HTTP ' + got.status + ', ' + got.body.length + ' 字节]' + (looksLikeScript ? '' : ' ⚠️ 内容不像脚本(可能是 429/登录页/拦截页)'));
     }
 
+    // ---------- 1b. 远端重写资源是否带段头 ----------
+    // QX 的 [rewrite_remote] 按段解析远程文件：缺 [rewrite_local] / [mitm] 段头时
+    // 一条规则都不会注册，且不报错——表现就是「更新完规则再也抓不到包」。
+    const SNIPPET_URL = 'https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.snippet';
+    const sn = await fetchText(SNIPPET_URL);
+    if (!sn.ok) {
+        line('❌ 远端重写资源【下载失败】: ' + sn.error + '（规则更新不到，命中数会一直停在上一次成功的版本）');
+    } else {
+        const hasRewrite = /^\[rewrite_local\]$/m.test(sn.body);
+        const hasMitm = /^\[mitm\]$/m.test(sn.body);
+        const hasHost = /^hostname\s*=.*\bapi\.m\.jd\.com\b/m.test(sn.body);
+        line(
+            (hasRewrite && hasMitm && hasHost ? '✅' : '❌') +
+            ' 远端 snippet 段头: [rewrite_local]=' + (hasRewrite ? '有' : '缺') +
+            ' / [mitm]=' + (hasMitm ? '有' : '缺') +
+            ' / api.m.jd.com=' + (hasHost ? '有' : '缺')
+        );
+        if (!(hasRewrite && hasMitm && hasHost)) {
+            line('   → 段头缺失时 QX 会静默跳过整个文件：命中数恒为 0，且没有任何报错。');
+        }
+    }
+
     // ---------- 2. 青龙配置 ----------
     const v = (k) => (isQX ? $prefs.valueForKey(k) : $persistentStore.read(k));
     const qlUrl = v('ql_url');
@@ -101,11 +123,17 @@
     line('');
     line('🔎 脚本的触发条件（改一处就静默失效）：');
     line('   域名: api.m.jd.com');
-    line('   路径: /client.action?functionId=(getJDUserInfoUnion|queryJDUserInfo|myHomeV2|home|wareBusiness|basicConfig)');
-    line('   UA:   必须以 JD4iPhone 开头');
-    line('   → QX「首页→最近请求」里搜 api.m.jd.com，点开任意一条看 URL 和请求头 User-Agent，');
-    line('     如果 functionId 换了名字或 UA 前缀变了，就需要改 snippet/sgmodule 的正则。');
-    line('   → QX「设置→重写→规则」里找到本规则，点它，能看到最近命中次数；显示 0 就说明规则没命中。');
+    line('   路径: /client.action（不依赖 URL 里的 functionId，它已经被京东挪进 POST 请求体）');
+    line('   UA:   以 jdapp; 或 JD4iPhone 开头，并且请求里必须带 Cookie（含 pt_key / pt_pin）');
+    line('   → QX「首页→最近请求」里搜 api.m.jd.com，点开任意一条看 URL 与请求头 User-Agent；');
+    line('     如果一条 api.m.jd.com 都看不到，说明根本没走 QX（或 MITM 没生效），与脚本无关。');
+    line('');
+    line('📌 「抓不到包」按命中数分三种：');
+    line('   命中数 0  → 规则没注册。头号原因是远程 snippet 缺 [rewrite_local] / [mitm] 段头，');
+    line('               或 [mitm] 里没有 api.m.jd.com（没解密就永远不命中）。');
+    line('   命中数 >0 但没有日志 → 脚本没跑起来：远端 jd_cookie_sync.js 下载失败，或语法报错。');
+    line('   有日志但一直是 ⏭️/🔕 → 走到脚本内部过滤了：UA 不是京东 App、没有 Cookie、');
+    line('               或 30 分钟内 cookie 没变化（跑上面的 bypass 标志可强制重试）。');
 
     $notify('JD Cookie 诊断结果', '', R.join('\n'));
     $done();

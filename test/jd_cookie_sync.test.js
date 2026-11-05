@@ -17,6 +17,8 @@ const {
     envRow,
     VALID_COOKIE,
     APP_OPEN_COOKIE,
+    FULL_COOKIE,
+    DEVICE_HEADERS,
     JD_UA,
     JD_UA_CFNETWORK,
     JD_UA_H5,
@@ -88,7 +90,7 @@ test('同步成功后写入缓存与时间戳', async () => {
     const qinglong = createQinglongStub({ envs: oldEnvs() });
     await runInSurge('sync', { store, qinglong });
 
-    assert.equal(store.jd_cookie_cache_testuser, 'pt_key=AAJoNEWKEY1234567890;pt_pin=testuser;');
+    assert.equal(store.jd_cookie_cache_testuser, FULL_COOKIE, '缓存必须是含设备指纹的完整值');
     assert.ok(Number(store.jd_cookie_last_update_testuser) > 0, '应记录本次同步时间');
 });
 
@@ -136,7 +138,7 @@ test('凭证包含 & 与 = 时必须 URL 编码', async () => {
 });
 
 test('值未变化且无重复时不发写请求', async () => {
-    const qinglong = createQinglongStub({ envs: [envRow(7, 'pt_key=AAJoNEWKEY1234567890;pt_pin=testuser;')] });
+    const qinglong = createQinglongStub({ envs: [envRow(7, FULL_COOKIE)] });
     const { requests } = await runInSurge('sync', { store: config(), qinglong });
 
     const seq = methodSequence(requests);
@@ -144,9 +146,8 @@ test('值未变化且无重复时不发写请求', async () => {
 });
 
 test('存在重复行时清理多余项，保留精确匹配那条', async () => {
-    const current = 'pt_key=AAJoNEWKEY1234567890;pt_pin=testuser;';
     const qinglong = createQinglongStub({
-        envs: [envRow(7, current), envRow(8, current), envRow(9, OLD_COOKIE)]
+        envs: [envRow(7, FULL_COOKIE), envRow(8, FULL_COOKIE), envRow(9, OLD_COOKIE)]
     });
     const { requests } = await runInSurge('sync', { store: config(), qinglong });
 
@@ -251,7 +252,7 @@ test('缺少 Cookie 头时安全退出', async () => {
     const qinglong = createQinglongStub({ envs: oldEnvs() });
     const { requests } = await runInSurge('sync', {
         store: config(),
-        headers: { 'User-Agent': JD_UA },
+        headers: { 'User-Agent': JD_UA, Cookie: '' },
         qinglong
     });
 
@@ -282,7 +283,7 @@ test('青龙地址协议非法时拒绝请求', async () => {
 
 test('时间间隔内跳过同步', async () => {
     const store = config({
-        jd_cookie_cache_testuser: 'pt_key=AAJoNEWKEY1234567890;pt_pin=testuser;',
+        jd_cookie_cache_testuser: FULL_COOKIE,
         jd_cookie_last_update_testuser: String(Date.now())
     });
     const qinglong = createQinglongStub({ envs: oldEnvs() });

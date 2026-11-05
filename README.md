@@ -44,6 +44,9 @@ https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.sgmodule
 https://raw.githubusercontent.com/gjzbbs/jd_surge/main/jd_cookie_sync.snippet, tag=自动同步京东cookie(qinglong), update-interval=86400, enabled=true
 ```
 
+> QX 的远程重写资源按行解析：`hostname = api.m.jd.com` 会并入 MITM 列表，下面那行正则就是重写规则本身。
+> 如果你手动粘贴而不是远程引用，把正则行放进 `[rewrite_local]`、把 `hostname` 行放进 `[mitm]` 即可。
+
 #### 安装配置面板（可选）
 
 如需在 Surge 面板中查看配置状态，可安装配置面板模块：
@@ -122,8 +125,60 @@ $done()
 ```
 ✅ 同步成功
 账号: your_jd_account
+📱 iOS 18.5 iPhone / iPhone17,2 / App 16.1.50
 已同步到青龙面板
 ```
+
+### 4. 同步到青龙的 JD_COOKIE 长什么样
+
+写入青龙的不再是 `pt_key=...;pt_pin=...;` 两段式，而是一整条带设备指纹的分号串：
+
+```
+pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135;uuid=0123456789abcdef0123456789abcdef01234567;x-api-eid-token=jdd...;wg-sdk-token=jdd01...;d_brand=iPhone;d_model=iPhone17,2;osVersion=18.5;build=171135;clientVersion=16.1.50
+```
+
+| 字段 | 来源头 | 取值要求 |
+|---|---|---|
+| `pt_key`、`pt_pin` | `Cookie` | 登录态，原样保留 |
+| `User-Agent` | `User-Agent` | 统一归一成 `jdapp;` 开头，且能读出系统版本 |
+| `uuid` | `uuid` | 32–40 位十六进制 |
+| `x-api-eid-token` | `x-api-eid-token` | `jdd` 开头，长度 100–400 |
+| `wg-sdk-token` | `wg-sdk-token` | `jdd01` 开头，长度 ≥100 |
+| `d_brand`、`d_model` | `d_brand`、`d_model` | 只留明码机型，密文丢弃 |
+| `osVersion` | `osVersion` | 如 `18.5` |
+| `build` | `build` | 5–8 位数字，缺失时取 UA 的 `appBuild` |
+| `clientVersion` | `clientVersion` | App 版本，缺失时取 UA 里的版本号 |
+
+几点约定：
+
+- `screen`、`openudid` 可以不抓；没有 `openudid` 时下游用 `uuid` 顶替。
+- `h5st` 是每次请求现签的一次性签名，**不写进 JD_COOKIE，也不写进本地缓存**。
+- 系统版本只接受 iOS 13 / 14–19 / 26–27 与 Android 10–16；iOS 27 的 TLS 指纹还没被识别，先套用 iOS 26 的 ClientHello。超出白名单的版本会被丢弃，该账号按「设备字段不全」处理。
+- 设备字段没抓全、且该账号本地没有可用缓存时，脚本会打一行 `⏭️ 设备字段不全，跳过 [账号]: 缺失字段` 并跳过同步——半截的设备身份比没有更危险。抓全一次之后，后续只带 `pt_key`/`pt_pin` 的请求会用缓存补齐。
+
+### 5. 手动导入（可选）
+
+抓不到包、或想把旧设备的身份搬过来时，可以直接粘一段抓包内容，不用等 App 触发：
+
+- HAR 文件里的 `log.entries[].request.headers`
+- 浏览器开发者工具「Copy as cURL」出来的 curl 命令
+- 自己拼的分号串
+
+把内容塞进模块参数即可，格式是 `push:<内容>`：
+
+```
+argument=push:pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135;uuid=...;x-api-eid-token=jdd...;wg-sdk-token=jdd01...;d_brand=iPhone;d_model=iPhone17,2;osVersion=18.5;build=171135;clientVersion=16.1.50
+```
+
+内容太长不方便塞进模块参数时，先把文本写进持久化存储，再只传 `push`：
+
+```javascript
+// Surge
+$persistentStore.write('<HAR / curl / 分号串全文>', 'jd_import_payload');
+$done()
+```
+
+导入时同样走完整的校验：多账号用 `&`、换行分隔，或直接以 `;pt_key=` 接上下一个账号；只填了 `pt_key`/`pt_pin` 的账号会用该账号已有缓存补齐，补不齐就跳过并在通知里列出来。导入结果同样写入青龙 `JD_COOKIE`，本账号的缓存也会一并更新。
 
 ## 🔑 获取青龙应用凭证
 
@@ -224,6 +279,15 @@ $done()
 ### Cookie 多久更新一次？
 
 默认 30 分钟内不会重复同步相同账号，可通过 `ql_update_interval` 自定义。
+
+### 日志里出现「设备字段不全，跳过」怎么办？
+
+说明这次抓到的请求只带了部分设备头。两条路：
+
+1. 把京东 App 完全杀掉重开（触发 App 启动的 `client.action` 请求会带全 `uuid` / `x-api-eid-token` / `wg-sdk-token` / `d_brand` / `d_model` / `osVersion`），再正常浏览几个页面。
+2. 如果该账号之前同步过，本地缓存里有完整身份，脚本会自动补齐，直接忽略这条日志即可。
+
+**不要**手工往青龙里塞只有 `pt_key` / `pt_pin` 的旧格式值——下次同步会把它当成「值已变化」覆盖掉，等于白改。
 
 ### 支持多账号吗？
 

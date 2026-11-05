@@ -25,6 +25,9 @@ const JD_APP_UA_RE = /^(?:JD4iPhone|jdapp;)/i;
 const APP_OPEN_PREFIX = 'app_open';
 
 const DEFAULT_UPDATE_INTERVAL = 1800; // 默认30分钟
+
+// 手动导入：粘贴内容过长时先写进这个存储键，$argument 只传 push
+const IMPORT_PAYLOAD_KEY = 'jd_import_payload';
 const REQUEST_TIMEOUT = 6000;       // 单次请求超时，必须显著小于 sgmodule 的 timeout=20
 const SYNC_LOCK_TTL = 30000;        // 同步锁自动过期时间，需大于脚本最长存活时间
 
@@ -68,52 +71,540 @@ function validateConfig(config) {
     return { valid: true };
 }
 
-// ============= Cookie 提取与验证 =============
+// ============= 设备指纹（完整 JD_COOKIE） =============
+//
+// 青龙里的 JD_COOKIE 不只是一对 pt_key/pt_pin。下游脚本要用「同一台设备」的
+// UA、uuid、eid token、wg token、机型、系统版本、build、App 版本去请求，
+// 少一个字段就会被京东认成异机登录。这里把抓包请求头归一化成固定字段、
+// 做格式校验、按账号缓存，并在字段缺失时回落到该账号上次抓到的完整值。
+//
+// 两条硬规则：
+//   1. h5st 每次请求现签，不解析、不序列化、不进缓存
+//   2. 字段补不齐就不写青龙——半截设备身份比没有更危险
+
+// 系统版本白名单：只认这些大版本
+const OS_ALLOWLIST = {
+    ios: [13, 14, 15, 16, 17, 18, 19, 26, 27],
+    android: [10, 11, 12, 13, 14, 15, 16]
+};
+
+// iOS 27 的 TLS 指纹还没被京东识别，先复用 iOS 26 的 ClientHello
+const CLIENT_HELLO_ALIAS = { ios: { 27: 26 } };
+
+// 字段别名：抓包头、分号串、HAR、curl 里的各种写法都归一到同一组键
+const FIELD_ALIASES = {
+    pt_key: 'ptKey',
+    ptpin: 'ptPin',
+    pt_pin: 'ptPin',
+    'user-agent': 'userAgent',
+    useragent: 'userAgent',
+    ua: 'userAgent',
+    user_agent: 'userAgent',
+    uuid: 'uuid',
+    'x-api-eid-token': 'eidToken',
+    xapieidtoken: 'eidToken',
+    eidtoken: 'eidToken',
+    eid_token: 'eidToken',
+    'wg-sdk-token': 'wgToken',
+    wgsdktoken: 'wgToken',
+    wgtoken: 'wgToken',
+    wg_token: 'wgToken',
+    d_brand: 'dBrand',
+    dbrand: 'dBrand',
+    d_model: 'dModel',
+    dmodel: 'dModel',
+    osversion: 'osVersion',
+    os_version: 'osVersion',
+    build: 'build',
+    appbuild: 'build',
+    clientversion: 'clientVersion',
+    client_version: 'clientVersion',
+    openudid: 'openudid',
+    screen: 'screen'
+};
+
+const FIELD_LABELS = {
+    userAgent: 'User-Agent',
+    uuid: 'uuid',
+    eidToken: 'x-api-eid-token',
+    wgToken: 'wg-sdk-token',
+    dBrand: 'd_brand',
+    dModel: 'd_model',
+    osVersion: 'osVersion',
+    build: 'build',
+    clientVersion: 'clientVersion'
+};
+
+const REQUIRED_PROFILE_FIELDS = Object.keys(FIELD_LABELS);
+
+// 序列化顺序与 README 的字段表一致
+const SERIALIZE_ORDER = [
+    ['ptKey', 'pt_key'],
+    ['ptPin', 'pt_pin'],
+    ['userAgent', 'User-Agent'],
+    ['uuid', 'uuid'],
+    ['eidToken', 'x-api-eid-token'],
+    ['wgToken', 'wg-sdk-token'],
+    ['dBrand', 'd_brand'],
+    ['dModel', 'd_model'],
+    ['osVersion', 'osVersion'],
+    ['build', 'build'],
+    ['clientVersion', 'clientVersion'],
+    ['openudid', 'openudid'],
+    ['screen', 'screen']
+];
 
 /**
- * 从请求头提取并验证 Cookie
+ * 大小写不敏感地取请求头
  */
-function extractCookie(headers) {
-    const cookieHeader = headers['Cookie'] || headers['cookie'];
+function headerValue(headers, name) {
+    if (!headers) return '';
+    const wanted = String(name).toLowerCase();
+    const key = Object.keys(headers).find(k => k.toLowerCase() === wanted);
+    if (!key) return '';
+    const value = headers[key];
+    return value == null ? '' : String(value).trim();
+}
 
-    if (!cookieHeader) {
-        return { valid: false, message: 'Cookie header not found' };
+/**
+ * 诊断用：只列请求头的名字，不含任何值。
+ * 用来一眼看出 QX / Surge 到底把哪些字段透传给了脚本。
+ */
+function describeHeaderNames(headers) {
+    if (!headers) return '(无请求头)';
+    return Object.keys(headers).map(key => String(key).toLowerCase()).sort().join(', ');
+}
+
+function canonField(name) {
+    const key = String(name || '').trim().toLowerCase();
+    if (!key) return null;
+    return FIELD_ALIASES[key] || FIELD_ALIASES[key.replace(/[-_]/g, '')] || null;
+}
+
+function normalizeUuid(raw) {
+    const value = String(raw || '').trim().replace(/^[{}]+|[{}]+$/g, '').replace(/-/g, '').toLowerCase();
+    return /^[0-9a-f]{32,40}$/.test(value) ? value : '';
+}
+
+function normalizeEidToken(raw) {
+    const value = String(raw || '').trim();
+    if (!/^jdd/i.test(value)) return '';
+    return value.length >= 100 && value.length <= 400 ? value : '';
+}
+
+function normalizeWgToken(raw) {
+    const value = String(raw || '').trim();
+    if (!/^jdd01/i.test(value)) return '';
+    return value.length >= 100 ? value : '';
+}
+
+function normalizeBuild(raw) {
+    const value = String(raw || '').trim();
+    return /^\d{5,8}$/.test(value) ? value : '';
+}
+
+function normalizeClientVersion(raw) {
+    const value = String(raw || '').trim();
+    return /^\d+\.\d+(?:\.\d+){0,2}$/.test(value) ? value : '';
+}
+
+/**
+ * 明文机型：iPhone17,2 / SM-S9180 / 23013RK75C / HUAWEI Mate 60
+ * 密文（base64 或长无分隔串）直接丢掉
+ */
+function normalizeDeviceValue(raw, maxLength) {
+    const value = String(raw || '').trim();
+    if (!value || value.length > maxLength) return '';
+    if (/[=+/]/.test(value)) return '';
+    if (/^[A-Za-z0-9]{20,}$/.test(value)) return '';
+    if (!/^[A-Za-z0-9][A-Za-z0-9 ,._()\-]*$/.test(value)) return '';
+    return value;
+}
+
+function makeOs(platform, major, minor) {
+    return {
+        platform,
+        major: Number(major),
+        text: minor == null ? String(Number(major)) : `${Number(major)}.${Number(minor)}`
+    };
+}
+
+/**
+ * 解析系统版本：osVersion 头里的 18.5 / iOS 17.0 / Android 13，
+ * 或者 UA 里的 (iPhone; iOS 17.0; ...)
+ */
+function parseOsVersion(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return null;
+
+    let match = text.match(/(?:ios|iphone\s*os)[\s/_-]*(\d{1,2})(?:[._](\d{1,2}))?/i);
+    if (match) return makeOs('ios', match[1], match[2]);
+
+    match = text.match(/android[\s/_-]*(\d{1,2})(?:[._](\d{1,2}))?/i);
+    if (match) return makeOs('android', match[1], match[2]);
+
+    match = text.match(/^(\d{1,2})(?:[._](\d{1,2}))?$/);
+    if (match) return makeOs('', match[1], match[2]);
+
+    return null;
+}
+
+/**
+ * 从 UA 里挖平台、App 版本、appBuild
+ *   jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135     → ios / 16.1.50 / 171135
+ *   JD4iPhone/167783 (iPhone; iOS 17.0; Scale/3.00)   → ios / - / 167783
+ *   JD4iPhone/16.0.0 CFNetwork/1492.0.1               → ios / 16.0.0 / -
+ */
+function parseUserAgent(raw) {
+    const ua = String(raw || '');
+    const info = { platform: '', clientVersion: '', build: '' };
+    if (!ua) return info;
+
+    if (/android/i.test(ua)) info.platform = 'android';
+    else if (/iphone|ipad|ipod|ios/i.test(ua)) info.platform = 'ios';
+
+    const appBuild = ua.match(/appBuild\/(\d{5,8})/i);
+    if (appBuild) info.build = appBuild[1];
+
+    const jdapp = ua.match(/^jdapp;([^;]*);([^;]+)/i);
+    if (jdapp) {
+        if (!info.platform) info.platform = /android/i.test(jdapp[1]) ? 'android' : 'ios';
+        if (/^\d+\.\d+(?:\.\d+){0,2}$/.test(jdapp[2])) info.clientVersion = jdapp[2];
     }
 
-    const ptKeyMatch = cookieHeader.match(/pt_key=([^;]+)/);
-    const ptPinMatch = cookieHeader.match(/pt_pin=([^;]+)/);
-
-    if (!ptKeyMatch || !ptPinMatch) {
-        return { valid: false, message: 'pt_key or pt_pin not found in cookie' };
+    const native = ua.match(/^JD4iPhone\/([^ ;]+)/i);
+    if (native) {
+        const token = native[1];
+        if (/^\d{5,8}$/.test(token)) info.build = info.build || token;
+        else if (/^\d+\.\d+(?:\.\d+){0,2}$/.test(token)) info.clientVersion = token;
     }
 
-    let ptKey = ptKeyMatch[1];
-    const ptPin = decodeURIComponent(ptPinMatch[1]);
+    return info;
+}
 
-    if (!ptKey || !ptPin || ptKey.length < 10) {
-        return { valid: false, message: 'Invalid cookie format' };
-    }
-
-    if (ptKey.startsWith('fake_') || ptPin.toLowerCase() === 'guest') {
-        return { valid: false, message: 'Guest cookie detected, skipping sync' };
-    }
-
-    // 默认保留抓到的原值——那是京东服务器刚刚接受过的完整凭证。
-    // 老签到脚本若只认 AAJ 开头的经典格式，置 jd_strip_app_open=true 去掉前缀。
-    if (ptKey.startsWith(APP_OPEN_PREFIX) && $.getval(CONFIG_KEYS.STRIP_APP_OPEN) === 'true') {
-        ptKey = ptKey.slice(APP_OPEN_PREFIX.length);
-        if (ptKey.length < 10) {
-            return { valid: false, message: 'Invalid cookie format' };
-        }
-        $.log(`🧹 已去除 pt_key 的 ${APP_OPEN_PREFIX} 前缀`);
-    }
+/**
+ * 把字段字典归一成一个 profile。
+ * 所有校验都在这里做——不合格式的字段直接置空，交给缓存回落或跳过。
+ */
+function normalizeProfileFields(fields) {
+    const source = fields || {};
+    const userAgent = String(source.userAgent || '').trim();
+    const uaInfo = parseUserAgent(userAgent);
+    const os = parseOsVersion(source.osVersion);
 
     return {
-        valid: true,
-        cookie: `pt_key=${ptKey};pt_pin=${ptPin};`,
-        ptKey,
-        ptPin
+        ptKey: String(source.ptKey || '').trim(),
+        ptPin: String(source.ptPin || '').trim(),
+        userAgent,
+        uuid: normalizeUuid(source.uuid),
+        eidToken: normalizeEidToken(source.eidToken),
+        wgToken: normalizeWgToken(source.wgToken),
+        dBrand: normalizeDeviceValue(source.dBrand, 24),
+        dModel: normalizeDeviceValue(source.dModel, 32),
+        osVersion: os ? os.text : '',
+        platform: (os && os.platform) || uaInfo.platform,
+        build: normalizeBuild(source.build) || uaInfo.build,
+        clientVersion: normalizeClientVersion(source.clientVersion) || uaInfo.clientVersion,
+        openudid: String(source.openudid || '').trim(),
+        screen: String(source.screen || '').trim()
     };
+}
+
+/**
+ * 从一次抓包的请求头构建 profile
+ */
+function profileFromHeaders(headers) {
+    const cookieHeader = headerValue(headers, 'Cookie');
+    const ptKey = (cookieHeader.match(/pt_key=([^;]+)/) || [])[1] || '';
+    const ptPinRaw = (cookieHeader.match(/pt_pin=([^;]+)/) || [])[1] || '';
+
+    let ptPin = ptPinRaw;
+    try {
+        ptPin = decodeURIComponent(ptPinRaw);
+    } catch (e) {
+        ptPin = ptPinRaw;
+    }
+
+    return normalizeProfileFields({
+        ptKey: ptKey,
+        ptPin: ptPin,
+        userAgent: headerValue(headers, 'User-Agent'),
+        uuid: headerValue(headers, 'uuid'),
+        eidToken: headerValue(headers, 'x-api-eid-token'),
+        wgToken: headerValue(headers, 'wg-sdk-token'),
+        dBrand: headerValue(headers, 'd_brand'),
+        dModel: headerValue(headers, 'd_model'),
+        osVersion: headerValue(headers, 'osVersion'),
+        build: headerValue(headers, 'build'),
+        clientVersion: headerValue(headers, 'clientVersion'),
+        openudid: headerValue(headers, 'openudid'),
+        screen: headerValue(headers, 'screen')
+    });
+}
+
+/**
+ * 系统版本必须落在白名单里；返回解析后的平台与 ClientHello 家族
+ */
+function checkOsVersion(profile) {
+    const parsed = parseOsVersion(profile.osVersion);
+    if (!parsed) return { ok: false, reason: 'osVersion 缺失或无法识别' };
+
+    const platform = parsed.platform || profile.platform;
+    if (!platform) return { ok: false, reason: '无法判定系统平台' };
+
+    const allowed = OS_ALLOWLIST[platform] || [];
+    if (!allowed.includes(parsed.major)) {
+        return { ok: false, reason: `不支持的 ${platform} 版本 ${parsed.text}` };
+    }
+
+    const hello = (CLIENT_HELLO_ALIAS[platform] || {})[parsed.major];
+    return { ok: true, platform, osVersion: parsed.text, clientHello: hello || parsed.major };
+}
+
+/**
+ * iOS 机型不能配 Android 品牌，反之亦然
+ */
+function platformMatchesBrand(platform, dBrand) {
+    if (!platform || !dBrand) return true;
+    const iosBrand = /iphone|ipad|ipod|apple/i.test(dBrand);
+    return platform === 'ios' ? iosBrand : !iosBrand;
+}
+
+/**
+ * UA 归一成 jdapp; 形态：平台 + App 版本 + appBuild 都在串里。
+ * 已经是 jdapp; 的原样保留，不改造真实 UA。
+ */
+function normalizeUserAgent(profile) {
+    const raw = String(profile.userAgent || '').trim();
+    if (/^jdapp;/i.test(raw)) return raw;
+
+    const uaInfo = parseUserAgent(raw);
+    const platform = profile.platform || uaInfo.platform;
+    const clientVersion = profile.clientVersion || uaInfo.clientVersion;
+    const build = profile.build || uaInfo.build;
+    if (!platform || !clientVersion) return '';
+
+    const device = platform === 'android' ? 'android' : 'iPhone';
+    const parts = ['jdapp', device, clientVersion, '', '', 'M/5.0'];
+    if (build) parts.push(`appBuild/${build}`);
+    return parts.join(';');
+}
+
+/**
+ * 收尾校验：系统版本、机型一致性、UA 形态、必填字段
+ */
+function finalizeProfile(input) {
+    const profile = { ...(input || {}) };
+    const osCheck = checkOsVersion(profile);
+    const platform = osCheck.ok ? osCheck.platform : (profile.platform || '');
+
+    if (!platformMatchesBrand(platform, profile.dBrand)) {
+        profile.dBrand = '';
+        profile.dModel = '';
+    }
+
+    profile.platform = platform;
+    profile.osVersion = osCheck.ok ? osCheck.osVersion : '';
+    if (osCheck.ok) profile.clientHello = osCheck.clientHello;
+
+    profile.userAgent = normalizeUserAgent(profile);
+    if (!/^jdapp;/i.test(profile.userAgent)) profile.userAgent = '';
+
+    const missing = REQUIRED_PROFILE_FIELDS.filter(field => !profile[field]);
+    return {
+        complete: missing.length === 0,
+        profile,
+        missing,
+        reason: osCheck.ok ? '' : osCheck.reason
+    };
+}
+
+function mergeProfiles(base, incoming) {
+    const merged = { ...(base || {}) };
+    for (const key of Object.keys(incoming || {})) {
+        const value = incoming[key];
+        if (value !== '' && value != null) merged[key] = value;
+    }
+    return merged;
+}
+
+/**
+ * 输入字段 + 该账号缓存 → 完整 profile。
+ * 只填了 pt_key/pt_pin 的输入靠这里补齐；补不齐就不写青龙。
+ */
+function resolveProfile(input, cacheProfile) {
+    const merged = mergeProfiles(cacheProfile || {}, input || {});
+    return finalizeProfile(normalizeProfileFields(merged));
+}
+
+function serializeProfile(profile) {
+    const parts = [];
+    for (const [key, label] of SERIALIZE_ORDER) {
+        const value = profile[key];
+        if (!value) continue;
+        parts.push(`${label}=${value}`);
+    }
+    return parts.join(';');
+}
+
+/**
+ * 设备摘要，只用于日志与通知（不含任何 token）
+ */
+function describeProfile(profile) {
+    if (!profile) return '未知设备';
+    const system = profile.platform === 'android' ? `Android ${profile.osVersion}` : `iOS ${profile.osVersion}`;
+    const model = profile.dModel || profile.dBrand || '未知机型';
+    const app = profile.build ? `${profile.clientVersion}(${profile.build})` : profile.clientVersion;
+    return `${model} · ${system} · ${app}`;
+}
+
+/**
+ * 按「下一段以 字段名= 开头」切分。
+ * UA 里的 M/5.0、appBuild/171135 不含等号，所以 UA 内部分号不会被误切。
+ */
+function splitFieldChunks(raw) {
+    const chunks = [];
+    for (const part of String(raw).split(';')) {
+        const head = part.match(/^\s*([A-Za-z][A-Za-z0-9_.\-]{0,40})\s*=/);
+        if (head) {
+            chunks.push({ name: head[1], value: part.slice(head[0].length) });
+        } else if (chunks.length) {
+            chunks[chunks.length - 1].value += ';' + part;
+        }
+    }
+    return chunks;
+}
+
+/**
+ * 分号串解析，支持三种多账号分隔：&、换行、直接接 ;pt_key=
+ */
+function parseCookieChain(raw) {
+    const accounts = [];
+    let current = {};
+    let currentKey = '';
+
+    const flush = () => {
+        if (Object.keys(current).length) accounts.push(current);
+        current = {};
+        currentKey = '';
+    };
+
+    for (const segment of String(raw).split(/[\r\n&]+/)) {
+        if (!segment.trim()) continue;
+        flush();
+
+        for (const chunk of splitFieldChunks(segment)) {
+            const field = canonField(chunk.name);
+            if (!field) continue;
+            const value = chunk.value.trim();
+
+            if (field === 'ptKey' && currentKey && currentKey !== value) flush();
+            if (field === 'ptKey') currentKey = value;
+            current[field] = value;
+        }
+    }
+
+    flush();
+    return accounts;
+}
+
+function headersFromHarRequest(request) {
+    const headers = {};
+    for (const header of request.headers || []) {
+        if (header && header.name) headers[header.name] = header.value;
+    }
+    if (!headerValue(headers, 'Cookie') && Array.isArray(request.cookies) && request.cookies.length) {
+        headers.Cookie = request.cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    }
+    return headers;
+}
+
+function parseHarCookie(raw) {
+    let json;
+    try {
+        json = JSON.parse(raw);
+    } catch (e) {
+        return [];
+    }
+
+    const entries = json && json.log && json.log.entries;
+    if (!Array.isArray(entries)) return [];
+
+    const accounts = [];
+    for (const entry of entries) {
+        if (!entry || !entry.request) continue;
+        const profile = profileFromHeaders(headersFromHarRequest(entry.request));
+        if (profile.ptKey && profile.ptPin) accounts.push(profile);
+    }
+    return accounts;
+}
+
+function parseCurlCookie(raw) {
+    const headers = {};
+    const headerRe = /(?:-H|--header)\s+(['"])([\s\S]*?)\1/g;
+    let match;
+
+    while ((match = headerRe.exec(raw))) {
+        const line = match[2];
+        const separator = line.indexOf(':');
+        if (separator <= 0) continue;
+        headers[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+    }
+
+    const cookieArg = raw.match(/(?:-b|--cookie)\s+(['"])([\s\S]*?)\1/);
+    if (cookieArg && !headerValue(headers, 'Cookie')) headers.Cookie = cookieArg[2];
+
+    const profile = profileFromHeaders(headers);
+    return profile.ptKey && profile.ptPin ? [profile] : [];
+}
+
+/**
+ * 统一入口：HAR / curl / 分号串
+ */
+function parseCookieInput(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return [];
+    if (text.charAt(0) === '{') return parseHarCookie(text);
+    if (/^curl\b/i.test(text) || /\bcurl\s+-/i.test(text)) return parseCurlCookie(text);
+    return parseCookieChain(text);
+}
+
+/**
+ * 读取该账号缓存的完整设备身份
+ */
+function readCachedProfile(ptPin) {
+    const cached = $.getval(getCacheKeys(ptPin).cookie);
+    if (!cached) return null;
+
+    const accounts = parseCookieInput(cached);
+    const matched = accounts.find(account => account.ptPin === ptPin);
+    return normalizeProfileFields(matched || accounts[0] || null);
+}
+
+/**
+ * 两个 JD_COOKIE 值是否等价（忽略 h5st、字段顺序、HAR/curl 包装）
+ */
+function isSameCookieValue(left, right) {
+    const a = parseCookieInput(left);
+    const b = parseCookieInput(right);
+    if (!a.length || !b.length) return false;
+
+    const normalizedA = serializeProfile(normalizeProfileFields(a[0]));
+    const normalizedB = serializeProfile(normalizeProfileFields(b[0]));
+    return normalizedA === normalizedB && normalizedA !== '';
+}
+
+/**
+ * 抓包 Cookie 的合法性校验（游客、长度、前缀）
+ */
+function validateCapturedProfile(profile) {
+    if (!profile.ptKey || !profile.ptPin || profile.ptKey.length < 10) {
+        return { valid: false, message: 'Invalid cookie format' };
+    }
+    if (profile.ptKey.startsWith('fake_') || profile.ptPin.toLowerCase() === 'guest') {
+        return { valid: false, message: 'Guest cookie detected, skipping sync' };
+    }
+    return { valid: true };
 }
 
 /**
@@ -368,8 +859,17 @@ function extractPtPinFromEnv(env) {
     if (env.name !== 'JD_COOKIE' || !env.value) {
         return null;
     }
-    const match = env.value.match(/pt_pin=([^;]+)/);
-    return match ? decodeURIComponent(match[1]) : null;
+
+    // 环境变量值可能是分号串、HAR 或 curl，pt_pin 在 JSON 字符串里也能被这条正则命中，
+    // 所以这里不解析整份输入，避免对几十条 env 做无谓的 JSON 解析
+    const match = env.value.match(/pt_pin=([^;&"'\\\s]+)/);
+    if (!match) return null;
+
+    try {
+        return decodeURIComponent(match[1]);
+    } catch (e) {
+        return match[1];
+    }
 }
 
 /**
@@ -418,7 +918,9 @@ async function deleteAllEnvs(config, token, envs) {
  * 处理已存在的环境变量
  */
 async function handleExistingEnvs(config, token, existingEnvs, cookie, ptPin) {
-    const exactMatch = existingEnvs.find(env => env.value === cookie);
+    // 按字段等价比较，而不是按字符串相等：
+    // 手工粘贴的 HAR / curl / 少了设备字段的旧值都要能与目标值判为同一份身份
+    const exactMatch = existingEnvs.find(env => isSameCookieValue(env.value, cookie));
 
     // 只有一个且值相同，无需操作
     if (exactMatch && existingEnvs.length === 1) {
@@ -464,7 +966,7 @@ function clearBypassFlag() {
 /**
  * 同步 Cookie 到青龙
  */
-async function syncToQinglong(cookie, ptPin) {
+async function syncToQinglong(cookie, ptPin, profile) {
     const config = getConfig();
 
     // 检查是否需要更新
@@ -521,7 +1023,8 @@ async function syncToQinglong(cookie, ptPin) {
                 $.log(`⏭️ 值已存在 [${ptPin}]`);
             } else {
                 $.log(`✅ 同步成功 [${ptPin}]`);
-                $.msg('JD Cookie Sync', '✅ 同步成功', `账号: ${ptPin}\n已同步到青龙面板`);
+                $.log(`📱 ${describeProfile(profile)}`);
+                $.msg('JD Cookie Sync', '✅ 同步成功', `账号: ${ptPin}\n设备: ${describeProfile(profile)}\n已同步到青龙面板`);
             }
         } else {
             $.log(`❌ 同步失败 [${ptPin}]: ${result.message}`);
@@ -532,30 +1035,114 @@ async function syncToQinglong(cookie, ptPin) {
     }
 }
 
+// ============= 手动导入（HAR / curl / 分号串） =============
+
+/**
+ * $argument 形如 push 或 push:<粘贴内容>。
+ * 内容太长不适合塞进模块参数时，也可以先把文本写进 jd_import_payload 再传 push。
+ */
+function readImportPayload() {
+    if (typeof $argument !== 'string') return '';
+    const match = /^\s*push(?:\s*[:=]\s*([\s\S]*))?$/i.exec($argument);
+    if (!match) return '';
+    const inline = (match[1] || '').trim();
+    return inline || String($.getval(IMPORT_PAYLOAD_KEY) || '').trim();
+}
+
+async function runManualImport(payload) {
+    const accounts = parseCookieInput(payload);
+
+    if (!accounts.length) {
+        $.log('❌ 导入失败：没有解析出 pt_key / pt_pin');
+        $.msg('JD Cookie Sync', '导入失败', '确认粘贴的是 HAR、curl 命令或分号串，且包含 pt_key 与 pt_pin');
+        return;
+    }
+
+    let synced = 0;
+    const skipped = [];
+
+    for (const account of accounts) {
+        const captured = normalizeProfileFields(account);
+        const check = validateCapturedProfile(captured);
+        if (!check.valid) {
+            skipped.push(`${captured.ptPin || '未知账号'}（${check.message}）`);
+            continue;
+        }
+
+        const resolved = resolveProfile(captured, readCachedProfile(captured.ptPin));
+        if (!resolved.complete) {
+            const labels = resolved.missing.map(field => FIELD_LABELS[field]).join(',');
+            $.log(`⏭️ 设备字段不全，跳过 [${captured.ptPin}]: ${labels || resolved.reason}`);
+            skipped.push(`${captured.ptPin}（缺 ${labels || resolved.reason}）`);
+            continue;
+        }
+
+        await syncToQinglong(serializeProfile(resolved.profile), resolved.profile.ptPin, resolved.profile);
+        synced += 1;
+    }
+
+    $.log(`➕ 手动导入：成功 ${synced} 个，跳过 ${skipped.length} 个`);
+    if (skipped.length) {
+        $.log(`⏭️ 跳过清单: ${skipped.join('; ')}`);
+        $.msg('JD Cookie Sync', `导入完成（${synced} 成功 / ${skipped.length} 跳过）`, skipped.join('\n'));
+    }
+}
+
 // ============= 主函数 =============
 
 (async () => {
     try {
+        // 手动导入模式：不依赖抓包，直接解析 HAR / curl / 分号串
+        const importPayload = readImportPayload();
+        if (importPayload) {
+            await runManualImport(importPayload);
+            return;
+        }
+
         const headers = $request.headers;
 
         // 只处理京东主 App 的请求（原生网络栈 JD4iPhone / App 内 H5 jdapp;），
         // 过滤浏览器与第三方客户端
-        const userAgent = headers['User-Agent'] || headers['user-agent'] || '';
+        const userAgent = headerValue(headers, 'User-Agent');
         if (!JD_APP_UA_RE.test(userAgent)) {
             $.done({});
             return;
         }
 
-        // 提取并验证 Cookie
-        const cookieResult = extractCookie(headers);
+        const captured = profileFromHeaders(headers);
+        const capturedCheck = validateCapturedProfile(captured);
+        if (!capturedCheck.valid) {
+            $.done({});
+            return;
+        }
 
-        if (!cookieResult.valid) {
+        // 默认保留抓到的原值——那是京东服务器刚刚接受过的完整凭证。
+        // 老签到脚本若只认 AAJ 开头的经典格式，置 jd_strip_app_open=true 去掉前缀。
+        if (captured.ptKey.startsWith(APP_OPEN_PREFIX) && $.getval(CONFIG_KEYS.STRIP_APP_OPEN) === 'true') {
+            captured.ptKey = captured.ptKey.slice(APP_OPEN_PREFIX.length);
+            if (captured.ptKey.length < 10) {
+                $.done({});
+                return;
+            }
+            $.log(`🧹 已去除 pt_key 的 ${APP_OPEN_PREFIX} 前缀`);
+        }
+
+        // 单条请求缺几个设备头很正常（启动时会并发几十个 /client.action），
+        // 用该账号上次抓到的完整值补齐；补不齐就跳过——半截设备身份比没有更危险
+        const resolved = resolveProfile(captured, readCachedProfile(captured.ptPin));
+
+        if (!resolved.complete) {
+            const labels = resolved.missing.map(field => FIELD_LABELS[field]).join(',');
+            $.log(`⏭️ 设备字段不全，跳过 [${captured.ptPin}]: ${labels || resolved.reason}`);
+            // 只打头名不打值：这是判断「抓包环境到底给了什么」的唯一线索，
+            // 没有它就只能猜是规则没命中还是字段被丢弃。
+            $.log(`🔍 本次请求头字段: ${describeHeaderNames(headers)}`);
             $.done({});
             return;
         }
 
         // 同步到青龙
-        await syncToQinglong(cookieResult.cookie, cookieResult.ptPin);
+        await syncToQinglong(serializeProfile(resolved.profile), resolved.profile.ptPin, resolved.profile);
 
     } catch (error) {
         $.log(`❌ 脚本执行异常: ${error.message || error}`);

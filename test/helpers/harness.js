@@ -42,6 +42,30 @@ const JD_UA_H5 =
 // 2026-09 起 pt_key 带 app_open 渠道前缀
 const APP_OPEN_COOKIE = 'pt_key=app_openAAJoAPP1234567890;pt_pin=testuser;wskey=x';
 
+/**
+ * 一次真实 /client.action 请求里会带的设备指纹头。
+ * 缺任何一个，脚本都会认为设备身份不完整而跳过同步，所以默认全给。
+ */
+const DEVICE_HEADERS = {
+    'User-Agent': JD_UA_H5,
+    uuid: '0123456789abcdef0123456789abcdef01234567',
+    'x-api-eid-token': 'jdd' + 'A1b2C3d4E5'.repeat(20),
+    'wg-sdk-token': 'jdd01' + 'Z9y8X7w6V5'.repeat(20),
+    d_brand: 'iPhone',
+    d_model: 'iPhone17,2',
+    osVersion: '18.5',
+    build: '170980',
+    clientVersion: '16.0.0'
+};
+
+/** 完整 JD_COOKIE 值（脚本在设备字段齐全时应产出的形态） */
+const FULL_COOKIE =
+    'pt_key=AAJoNEWKEY1234567890;pt_pin=testuser;User-Agent=' + JD_UA_H5 +
+    ';uuid=0123456789abcdef0123456789abcdef01234567' +
+    ';x-api-eid-token=' + DEVICE_HEADERS['x-api-eid-token'] +
+    ';wg-sdk-token=' + DEVICE_HEADERS['wg-sdk-token'] +
+    ';d_brand=iPhone;d_model=iPhone17,2;osVersion=18.5;build=170980;clientVersion=16.0.0';
+
 const FULL_CONFIG = {
     ql_url: 'http://ql.local:5700',
     ql_client_id: 'id&with=specials',
@@ -121,11 +145,18 @@ function createQinglongStub(opts = {}) {
 function runInSurge(sourceKey, options = {}) {
     const {
         store = {},
-        headers = { 'User-Agent': JD_UA, Cookie: VALID_COOKIE },
+        headers: extraHeaders,
+        device = true,
         argument,
         qinglong = createQinglongStub(),
         timeoutMs = 3000
     } = options;
+
+    // device=true 时默认带全套设备指纹头，单个测试可以只覆盖其中几项；
+    // device=false 用于验证「设备字段不全就跳过」这条分支
+    const headers = device
+        ? { ...DEVICE_HEADERS, Cookie: VALID_COOKIE, ...(extraHeaders || {}) }
+        : { 'User-Agent': JD_UA, Cookie: VALID_COOKIE, ...(extraHeaders || {}) };
 
     const notifications = [];
     const logs = [];
@@ -172,7 +203,7 @@ function runInSurge(sourceKey, options = {}) {
     if (argument !== undefined) sandbox.$argument = argument;
     sandbox.global = sandbox;
 
-    const result = { store, notifications, logs, requests: qinglong.requests };
+    const result = { store, notifications, logs, requests: qinglong.requests, sandbox };
 
     return new Promise((resolve, reject) => {
         const timer = setTimeout(
@@ -289,6 +320,8 @@ module.exports = {
     envRow,
     VALID_COOKIE,
     APP_OPEN_COOKIE,
+    FULL_COOKIE,
+    DEVICE_HEADERS,
     JD_UA,
     JD_UA_CFNETWORK,
     JD_UA_H5,
