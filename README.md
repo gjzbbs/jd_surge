@@ -137,20 +137,23 @@ $done()
 pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135;uuid=0123456789abcdef0123456789abcdef01234567;x-api-eid-token=jdd...;wg-sdk-token=jdd01...;d_brand=iPhone;d_model=iPhone17,2;osVersion=18.5;build=171135;clientVersion=16.1.50
 ```
 
-| 字段 | 来源头 | 取值要求 |
+| 字段 | 来源 | 取值要求 |
 |---|---|---|
-| `pt_key`、`pt_pin` | `Cookie` | 登录态，原样保留 |
-| `User-Agent` | `User-Agent` | 统一归一成 `jdapp;` 开头，且能读出系统版本 |
-| `uuid` | `uuid` | 32–40 位十六进制 |
-| `x-api-eid-token` | `x-api-eid-token` | `jdd` 开头，长度 100–400 |
-| `wg-sdk-token` | `wg-sdk-token` | `jdd01` 开头，长度 ≥100 |
-| `d_brand`、`d_model` | `d_brand`、`d_model` | 只留明码机型，密文丢弃 |
-| `osVersion` | `osVersion` | 如 `18.5` |
-| `build` | `build` | 5–8 位数字，缺失时取 UA 的 `appBuild` |
-| `clientVersion` | `clientVersion` | App 版本，缺失时取 UA 里的版本号 |
+| `pt_key`、`pt_pin` | `Cookie` 头 | 登录态，原样保留 |
+| `User-Agent` | `User-Agent` 头 | 统一归一成 `jdapp;` 开头，且能读出系统版本 |
+| `uuid` | body 的 `uuid`（密文 `R4i…` 丢弃） | 32–40 位十六进制；拿不到时按 `pt_pin` 派生一个稳定值 |
+| `x-api-eid-token` | body 的 `x-api-eid-token` | `jdd` 开头，长度 100–400 |
+| `wg-sdk-token` | body 的 `ext` 里的 `sdkToken` | `jdd01` 开头，长度 ≥100 |
+| `d_brand`、`d_model` | body 的 `d_brand`、`d_model` | 只留明码机型，密文丢弃 |
+| `osVersion` | body 的 `osVersion`，或 UA 里的 `os/17.3` | 如 `18.5` |
+| `build` | body 的 `build`，或 UA 里的 `appBuild/` | 5–8 位数字 |
+| `clientVersion` | body 的 `clientVersion`，或 UA 里的版本号 | App 版本 |
 
 几点约定：
 
+- **设备字段几乎都在 POST body 的 query string 里，不在请求头**。所以 sgmodule 用 `requires-body=1`，Quantumult X 用 `script-request-body`——只要请求头的话只能拿到 `pt_key`/`pt_pin`。
+- 一次 `client.action` 只带一部分字段（`uuid` 在启动请求、`x-api-eid-token` 在消息中心、`wg-sdk-token` 藏在 `ext` 里），脚本会按字段攒进 `jd_cookie_partial_{ptPin}`，攒齐 10 个才写青龙。`jd_cookie_cache_{ptPin}` 仍然只在同步成功后写。
+- 抓包里的 `uuid`、`d_brand`、`d_model`、`osVersion`、`screen` 经常是 `R4iSK…` 开头的密文。密文一律当成「没抓到」，不写进 JD_COOKIE。
 - `screen`、`openudid` 可以不抓；没有 `openudid` 时下游用 `uuid` 顶替。
 - `h5st` 是每次请求现签的一次性签名，**不写进 JD_COOKIE，也不写进本地缓存**。
 - 系统版本只接受 iOS 13 / 14–19 / 26–27 与 Android 10–16；iOS 27 的 TLS 指纹还没被识别，先套用 iOS 26 的 ClientHello。超出白名单的版本会被丢弃，该账号按「设备字段不全」处理。
@@ -160,8 +163,8 @@ pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135
 
 抓不到包、或想把旧设备的身份搬过来时，可以直接粘一段抓包内容，不用等 App 触发：
 
-- HAR 文件里的 `log.entries[].request.headers`
-- 浏览器开发者工具「Copy as cURL」出来的 curl 命令
+- HAR 文件里的 `log.entries[].request`（请求头**和** `postData.text`——设备字段都在 body 里）
+- 浏览器开发者工具「Copy as cURL」出来的 curl 命令（`-d`/`--data-raw` 里的 body 会被一起解析）
 - 自己拼的分号串
 
 把内容塞进模块参数即可，格式是 `push:<内容>`：

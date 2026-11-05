@@ -7,7 +7,7 @@ Surge / Quantumult X proxy scripts that scrape JD (京东) cookies from intercep
 No bundler, no linter, no CI. `package.json` exists **only** to pin the test command — the shipped scripts have zero dependencies and are deployed by raw GitHub URL, never from `node_modules`.
 
 ```sh
-npm test          # node --test test/*.test.js  (87 tests, ~6s, no deps)
+npm test          # node --test test/*.test.js  (94 tests, ~6s, no deps)
 ```
 
 Run the glob, not bare `node --test`: Node treats every `.js` under `test/` as a test file, so `test/helpers/harness.js` would run as a phantom empty test.
@@ -33,10 +33,10 @@ A push to `main` reaches every user on their next module refresh. There is no st
 
 | File | Role |
 |---|---|
-| `jd_cookie_sync.js` | Main script. Runs as Surge `type=http-request` on every matching JD API call. Reads `$request.headers` only (`requires-body=0`). |
+| `jd_cookie_sync.js` | Main script. Runs as Surge `type=http-request` on every matching JD API call. Reads `$request.headers` **and** `$request.body` (`requires-body=1`) — the device fingerprint lives in the POST body query string, not in headers. |
 | `config_helper.js` | Panel/manual utility. Dispatches on `$argument`: `smart-check`, `clear`, `clear-cache`. |
 | `jd_cookie_sync.sgmodule` | Surge module: script binding + `[MITM] hostname = %APPEND% api.m.jd.com`. |
-| `jd_cookie_sync.snippet` | QX equivalent (`url script-request-header`). Must stay in sync with the sgmodule's regex. |
+| `jd_cookie_sync.snippet` | QX equivalent (`url script-request-body` — QX must read the body, `script-request-header` cannot see it). Must stay in sync with the sgmodule's regex. |
 | `config_panel.sgmodule` | Optional Surge panel. Wires only `smart-check` and `clear-cache`. |
 | `Scripts/QuantumultX/*.js` | 12-line QX loader stubs that `eval()` a remote `config_helper.js` — see gotcha below. |
 
@@ -92,7 +92,9 @@ pt_key=…;pt_pin=…;User-Agent=jdapp;…;uuid=…;x-api-eid-token=…;wg-sdk-t
 
 `SERIALIZE_ORDER` in `jd_cookie_sync.js` is the single source of that order; `serializeProfile()` walks it. Do not hand-build this string anywhere else.
 
-- **Input** can be a HAR (`log.entries[].request.headers`), a `curl` command, or the semicolon form itself. `parseCookieInput()` detects and dispatches; every path funnels into `profileFromHeaders()`/`parseCookieChain()`, so all three shapes must stay equivalent (there is a test for exactly that).
+- **Where the fields actually live.** Almost none of the fingerprint is in the request headers: on the real 2026-11 capture, 0 of 11 `client.action` requests carried `uuid` / `x-api-eid-token` / `wg-sdk-token` / `d_brand` / `d_model` / `osVersion` / `build` as headers. They are query parameters in the POST **body** (`wg-sdk-token` is nested as `ext` JSON's `sdkToken`). Hence `requires-body=1` in the sgmodule and `script-request-body` in the QX snippet; `profileFromRequest(headers, body)` reads both, `parseRequestBody()` accepts either a query string or JSON. A single call only carries a few of them, so they accumulate per field into `jd_cookie_partial_{ptPin}`.
+- **Ciphertext is treated as absent.** `R4iSK…` values (`isCipherValue()`) are dropped — JD encrypts `uuid`, `osVersion`, `d_brand`, `d_model`, `screen` on many endpoints. For `osVersion` the UA's `os/17.3` segment recovers it; for `uuid` with no plaintext and no cache, `finalizeProfile()` derives a stable 32-hex value from `pt_pin` (`deriveUuid()`). Derive **after** cache lookup, never inside `normalizeProfileFields()`, or the derived value shadows a uuid that was actually captured.
+- **Input** can be a HAR (`log.entries[].request` — headers **and** `postData.text`), a `curl` command (the `-d`/`--data-raw` body is parsed too), or the semicolon form itself. `parseCookieInput()` detects and dispatches; every path funnels into `profileFromRequest()`/`parseCookieChain()`, so all three shapes must stay equivalent (there is a test for exactly that).
 - **The `User-Agent` value is not escaped.** JD app UAs are full of semicolons (`jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135`), so the chain is split on `;<known field>=`, never on bare `;`. `splitFieldChunks()` does this with a lookahead over `FIELD_ALIASES`.
 - **Field aliases are collapsed but never rewritten silently.** `FIELD_ALIASES` maps capture names (`x-api-eid-token`, `wg-sdk-token`) and short names (`eid_token`, `wg_token`) onto one canonical key; `canonField()` is case/`-`/`_` insensitive.
 - **`osVersion` is allowlisted.** `OS_ALLOWLIST` = iOS 13–19 + 26–27, Android 10–16. Anything else is dropped, which makes the profile incomplete. iOS 27 reuses the iOS 26 ClientHello (`CLIENT_HELLO_ALIAS`).
@@ -106,7 +108,7 @@ pt_key=…;pt_pin=…;User-Agent=jdapp;…;uuid=…;x-api-eid-token=…;wg-sdk-t
 ## Storage keys
 
 Config: `ql_url`, `ql_client_id`, `ql_client_secret`, `ql_update_interval`, `jd_bypass_interval_check`, `jd_strip_app_open`.
-Per-account cache: `jd_cookie_cache_{ptPin}`, `jd_cookie_last_update_{ptPin}`, `jd_cookie_syncing_{ptPin}` (lock).
+Per-account cache: `jd_cookie_cache_{ptPin}`, `jd_cookie_last_update_{ptPin}`, `jd_cookie_syncing_{ptPin}` (lock), `jd_cookie_partial_{ptPin}` (fingerprint fragments accumulated across requests — never the source of `pt_key`/`pt_pin`), `jd_cookie_skipmsg_{ptPin}` (throttles the "fields incomplete" alert to once per hour).
 
 `jd_strip_app_open` is opt-in and defaults to off. Since 2026-09 JD prefixes `pt_key` with `app_open` (`app_openAAJqskN7...`). The default keeps the captured value verbatim — it is the exact credential JD's servers just accepted; stripping it is only for users whose downstream sign-in scripts only accept the classic `AAJ...` form.
 
