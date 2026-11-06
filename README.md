@@ -145,7 +145,7 @@ pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135
 | `x-api-eid-token` | body 的 `x-api-eid-token` | `jdd` 开头，长度 100–400 |
 | `wg-sdk-token` | body 的 `ext` 里的 `sdkToken` | `jdd01` 开头，长度 ≥100 |
 | `d_brand`、`d_model` | body 的 `d_brand`、`d_model` | 只留明码机型，密文丢弃；`d_brand` 拿不到时按平台和机型推出（iOS 必是 `apple`，安卓按型号前缀认厂商） |
-| `osVersion` | body 的 `osVersion`，或 UA 里的 `os/17.3` | 如 `18.5` |
+| `osVersion` | body 的 `osVersion`；拿不到就依次从 UA 的 `os/17.3`、`CPU iPhone OS 17_3`、`Darwin/23.3.0` 反推；全都没有时按 `pt_pin` 派生 | 如 `18.5` |
 | `build` | UA 里的 `appBuild/`，其次 body 的 `build` | 5–8 位数字 |
 | `clientVersion` | UA 里的版本号，其次 body 的 `clientVersion` | App 版本 |
 
@@ -160,6 +160,7 @@ pt_key=xxx;pt_pin=jd_xxx;User-Agent=jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135
 - `jdapp;` 的真实 UA 尾部会拖一段 `ep/%7B%22ciphertype%22…`（带一次性时间戳的加密指纹）和一段 `Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 …)` WebView 标识，两段都会在写入前被砍掉；UA 里没有 `os/` 段时补一段 `os/<系统版本>`，保证「能看出系统版本」。
 - `h5st` 是每次请求现签的一次性签名，**不写进 JD_COOKIE，也不写进本地缓存**。
 - 系统版本只接受 iOS 13 / 14–19 / 26–27 与 Android 10–16；iOS 27 的 TLS 指纹还没被识别，先套用 iOS 26 的 ClientHello。超出白名单的版本会被丢弃，该账号按「设备字段不全」处理。
+- `osVersion` 有四条回落链：body 的明文 → UA 的 `os/17.3` → UA 的 `CPU iPhone OS 17_3` → UA 的 `Darwin/23.3.0`（内核号减 6 就是 iOS 大版本）。有些账号的 UA 是裸 `jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135`，四条全落空，这时按 `pt_pin` 从 iOS 17.3/17.5/18.0/18.3/18.5（安卓 13/14/15）里稳定挑一个，并同步写进 UA 的 `os/` 段，两处永远一致。**这是刻意设计**：一个字段缺失就丢掉整个账号，代价太大。
 - 设备字段没抓全、且该账号本地没有可用缓存时，脚本会打一行 `⏭️ 设备字段不全，跳过 [账号]: 缺失字段` 并跳过同步——半截的设备身份比没有更危险。抓全一次之后，后续只带 `pt_key`/`pt_pin` 的请求会用缓存补齐。
 
 ### 5. 手动导入（可选）
