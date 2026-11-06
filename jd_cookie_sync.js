@@ -295,6 +295,29 @@ function parseUserAgent(raw) {
     const osTag = ua.match(/[;,]os\/(\d{1,2}(?:[._]\d{1,2})?)/i);
     if (osTag) info.osVersion = osTag[1].replace(/_/g, '.');
 
+    // 原生栈的 UA 是 JD4iPhone/16.1.50 CFNetwork/1492.0.1 Darwin/23.3.0 —— 没有 os/ 段，
+    // 但 Darwin 内核版本和 iOS 主版本严格对应（19→13、22→16、23→17、24→18、25→19）。
+    // body 里的 osVersion 常常是密文，这条回落是最后能拿到系统版本的地方。
+    if (!info.osVersion) {
+        const cpuOs = ua.match(/CPU (?:iPhone )?OS (\d{1,2})[._](\d{1,2})/i);
+        if (cpuOs) info.osVersion = cpuOs[1] + '.' + cpuOs[2];
+    }
+    if (!info.osVersion) {
+        const parsedUa = parseOsVersion(ua);
+        if (parsedUa) info.osVersion = parsedUa.text;
+    }
+    if (!info.osVersion) {
+        const darwin = ua.match(/Darwin\/(\d{1,2})\.(\d{1,2})/i);
+        if (darwin) {
+            const major = Number(darwin[1]) - 6;
+            if (major >= 13 && major <= 25) info.osVersion = major + '.' + darwin[2];
+        }
+    }
+    if (!info.osVersion) {
+        const androidOs = ua.match(/Android[ /](\d{1,2})(?:[._](\d{1,2}))?/i);
+        if (androidOs) info.osVersion = androidOs[1] + (androidOs[2] ? '.' + androidOs[2] : '');
+    }
+
     const buildTag = ua.match(/[;,]build\/(\d{5,8})/i);
     if (buildTag) info.build = info.build || buildTag[1];
 
@@ -337,6 +360,26 @@ function deriveUuid(seed) {
         h4 = Math.imul(h4 + c * 31, 0x27d4eb2f) >>> 0;
     }
     return [h1, h2, h3, h4].map(n => (n >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
+/**
+ * 抓包里 osVersion 常常是密文，UA 也可能既没有 os/ 段也没有 Darwin/。
+ * 这时按 ptPin 派生一个白名单内的值：宁可给一个稳定且合法的版本，
+ * 也不要让整条 cookie 因为一个字段被丢弃。同一账号永远派生出同一个版本。
+ */
+const OS_FALLBACK = {
+    ios: ['17.3', '17.5', '18.0', '18.3', '18.5'],
+    android: ['13', '14', '15']
+};
+
+function deriveOsVersion(seed, platform) {
+    const pool = OS_FALLBACK[platform] || OS_FALLBACK.ios;
+    const text = 'jdsurge-os:' + String(seed || '');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+        h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+    }
+    return pool[h % pool.length];
 }
 
 /**
@@ -600,6 +643,16 @@ function normalizeUserAgent(profile) {
  */
 function finalizeProfile(input) {
     const profile = { ...(input || {}) };
+
+    // osVersion 在 body 里基本都是密文（R4i…），原生栈的 UA 又可能既没有 os/ 段
+    // 也没有 Darwin/ —— 那时候整条 cookie 会因为这个字段被丢掉。
+    // 和 uuid/d_brand 一样处理：按 ptPin 派生一个白名单内的稳定值，UA 稍后会自动补 os/ 段。
+    if (!profile.osVersion && profile.ptPin) {
+        const guessPlatform = profile.platform || (/android/i.test(profile.userAgent || '') ? 'android' : 'ios');
+        profile.osVersion = deriveOsVersion(profile.ptPin, guessPlatform);
+        profile.platform = guessPlatform;
+    }
+
     const osCheck = checkOsVersion(profile);
     const platform = osCheck.ok ? osCheck.platform : (profile.platform || '');
 

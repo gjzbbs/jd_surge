@@ -593,3 +593,46 @@ test('UA 里没有 os/ 段时按 osVersion 补一段，满足「能看出系统�
     assert.ok(ua.includes('os/18.5'), '缺 os/ 时补上');
     assert.equal(ua.match(/os\//g).length, 1, '已经有 os/ 的不要再补第二段');
 });
+
+// ─────────────────────────────────────────────────────────────
+// osVersion 的兜底链：body 是密文、UA 是原生栈时也要能给出系统版本
+// ─────────────────────────────────────────────────────────────
+
+const DARWIN_UA = 'JD4iPhone/16.1.50 CFNetwork/1492.0.1 Darwin/23.3.0';
+const BARE_JDAPP_UA = 'jdapp;iPhone;16.1.50;;;M/5.0;appBuild/171135';
+
+test('原生栈 UA 用 Darwin 内核版本换算出 osVersion', async () => {
+    const g = await globals();
+    const info = g.parseUserAgent(DARWIN_UA);
+    assert.equal(info.platform, 'ios');
+    assert.equal(info.osVersion, '17.3', 'Darwin/23.3 → iOS 17.3');
+    assert.equal(info.clientVersion, '16.1.50');
+});
+
+test('body 的 osVersion 是密文、UA 又没有 os/ 段时，按 ptPin 派生白名单内的值', async () => {
+    const g = await globals();
+    const captured = g.profileFromRequest(
+        { Cookie: VALID_COOKIE, 'User-Agent': BARE_JDAPP_UA },
+        'osVersion=R4iSKKKKKKKMOzC01zCQKFpbSFmOKKKK&build=171135&clientVersion=16.1.50'
+    );
+    assert.equal(captured.osVersion, '', '密文按没有处理');
+
+    const resolved = g.resolveProfile(captured, null);
+    assert.ok(resolved.profile.osVersion, '不能因为一个字段丢掉整个账号');
+    assert.match(resolved.profile.osVersion, /^\d{1,2}(\.\d{1,2})?$/);
+    assert.ok(!resolved.missing.includes('osVersion'), '缺失清单里不该再有 osVersion');
+
+    const value = g.serializeProfile(resolved.profile);
+    assert.ok(value.includes('osVersion=' + resolved.profile.osVersion), 'JD_COOKIE 里必须有 osVersion=');
+    assert.ok(value.includes('os/' + resolved.profile.osVersion), 'UA 也要带上同一个系统版本，两处保持一致');
+});
+
+test('派生出来的 osVersion 对同一账号恒定、且落在白名单内', async () => {
+    const g = await globals();
+    const a1 = g.resolveProfile(g.normalizeProfileFields({ ptKey: 'AAJtest', ptPin: 'jd_pinu1', userAgent: BARE_JDAPP_UA }), null);
+    const a2 = g.resolveProfile(g.normalizeProfileFields({ ptKey: 'AAJtest', ptPin: 'jd_pinu1', userAgent: BARE_JDAPP_UA }), null);
+    assert.equal(a1.profile.osVersion, a2.profile.osVersion, '同一账号必须稳定，否则每次同步都像换了台设备');
+
+    const allowed = ['13', '14', '15', '16', '17', '18', '19', '26', '27'];
+    assert.ok(allowed.includes(String(a1.profile.osVersion).split('.')[0]), '派生值必须在 iOS 白名单内');
+});
